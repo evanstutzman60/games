@@ -17,9 +17,10 @@ eval(js+`
 let done=0,wins=0,clicks=0,screens={},sheets=0,camps=0;
 for(let run=0;run<RUNS;run++){S=null;seats=null;render();
  diff=run%2;const cls=Object.keys(CLASSES);seats=[0,1,2,3].map(i=>({ctrl:i<HUM?'human':(i<2+run%3?'ai':'none'),cls:cls[(i+run)%4],name:'H'+i}));render();
- mode=run%3===2?1:0;const b=walk(ids.main,[]).find(e=>text(e).startsWith('Begin'));b.onclick();
+ mode=run%3===2?1:0;const b=walk(ids.main,[]).find(e=>text(e).startsWith('Begin'));b.onclick();if(ids.modal.className==='show'){walk(ids.mbody,[]).find(e=>text(e)==='Overwrite').onclick()}
+ if(process.env.LATE&&S.camp){S.party.forEach(x=>x.ctrl='ai');let k=0;while(!(S.camp.contracts>=1&&S.screen==='town')&&k++<400000)autoStep(S);S.party[0].ctrl='human';S.gold+=3000;render();}
  for(let n=0;n<60000&&S&&S.screen!=='end';n++){
-  if(S.camp&&(S.camp.ch>2||S.camp.wipes>3)){camps++;break}
+  if(S.camp&&(process.env.LATE?S.camp.contracts>=4||S.camp.wipes>6:(S.camp.ch>2||S.camp.wipes>3))){camps++;break}
   screens[S.screen]=(screens[S.screen]||0)+1;
   if(timers.length){const f=timers.pop();timers.length=0;f();continue}
   if(ids.modal.className==='show'){const mb=walk(ids.mbody,[]);const e=mb[Math.floor(R()*mb.length)];clicks++;if(e.tag==='input'){e.checked=!e.checked;e.onchange({target:e})}else e.onclick();if(R()<0.5)closeModal();continue}
@@ -28,11 +29,11 @@ for(let run=0;run<RUNS;run++){S=null;seats=null;render();
   if(R()<0.03){openPack();continue}
   let bs=walk(ids.main,[]);if(!bs.length)throw new Error('no buttons on '+S.screen);
   if(S.screen==='combat'){const t=bs.filter(e=>/tgt/.test(e.className));if(t.length&&R()<0.9)bs=t;else{const sk=bs.filter(e=>e.tag==='button'&&!/Defend|Move to|Supplies/.test(text(e)));if(sk.length&&R()<0.85)bs=sk}}
-  if(S.screen==='shop'&&R()<0.3)bs=bs.filter(e=>text(e)==='Leave');if(S.screen==='town'&&R()<0.25)bs=bs.filter(e=>/^(Set out|Take the contract)/.test(text(e)));
+  if(S.screen==='shop'&&R()<0.3)bs=bs.filter(e=>text(e)==='Leave');if(S.screen==='town'&&R()<0.25)bs=bs.filter(e=>/^(Set out|Take this contract)/.test(text(e)));
   const e=bs[Math.floor(R()*bs.length)];clicks++;e.onclick({target:e});
   if(n===59999&&!S.camp)throw new Error('run did not finish, screen '+S.screen)}
- if(S&&S.camp){S=null;localStorage.removeItem('oathbound-v1');render();continue}
+ if(S&&S.camp){S=null;localStorage.removeItem('oathbound-slots');render();continue}
  if(S){done++;if(S.result==='victory')wins++;const nb=walk(ids.main,[]).find(e=>text(e)==='New adventure');if(!text(ids.main).includes('oath'))throw new Error('no ending');nb.onclick()}}
-if(mem['oathbound-v1'])throw new Error('save not cleared');
+const savedSlots=JSON.parse(mem['oathbound-slots']||'[]');if(savedSlots.some(x=>x&&x.S.screen==='end'))throw new Error('finished game left in a slot');
 console.log('humans',HUM,'| single runs finished',done,'| campaigns exercised',camps,'| wins',wins,'| clicks',clicks,'| hero sheets opened',sheets,'| screens seen',Object.keys(screens).join(','));
 `);

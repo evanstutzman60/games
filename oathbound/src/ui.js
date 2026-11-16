@@ -1,11 +1,23 @@
 // ---------- UI ----------
-const $ = id => document.getElementById(id), SAVE = 'oathbound-v1';
+const $ = id => document.getElementById(id), SAVE = 'oathbound-slots', VER = 5;
 function h(tag, attrs, ...kids) { const e = document.createElement(tag);
   for (const k in attrs || {}) { const v = attrs[k]; if (k === 'class') e.className = v; else if (k.slice(0, 2) === 'on') e[k] = v; else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v); }
   for (const c of kids.flat(3)) { if (c == null || c === false || c === '') continue; e.append(c.nodeType ? c : document.createTextNode(c)); } return e; }
 let S = null, sel = null, bagOpen = false, timer = null, inspect = null, seats = null, diff = 0, mode = 0;
 const NAMES = { warrior: 'Balian', rogue: 'Strider', mage: 'Mithrandir', priest: 'Earane' };
-const store = { get() { try { return JSON.parse(localStorage.getItem(SAVE)); } catch (e) { return null; } }, set(v) { try { v ? localStorage.setItem(SAVE, JSON.stringify(v)) : localStorage.removeItem(SAVE); } catch (e) {} } };
+// three save slots in the browser, autosaved between stops; each can be exported to a file and imported again
+const store = { all() { try { const a = JSON.parse(localStorage.getItem(SAVE)); return Array.isArray(a) ? a.concat([null, null, null]).slice(0, 3) : [null, null, null]; } catch (e) { return [null, null, null]; } },
+  put(i, v) { const a = this.all(); a[i] = v ? { at: Date.now(), S: v } : null; try { localStorage.setItem(SAVE, JSON.stringify(a)); return true; } catch (e) { return false; } } };
+let slot = 0, saveFail = false;
+const slotLabel = x => { const T = x.S, p = T.party.map(h => h.name).join(', '); return `${T.camp ? (T.camp.saga ? `Renowned heroes, contract rank ${T.camp.rank}` : `Campaign, chapter ${T.camp.ch}`) : 'Single adventure'}${T.diff ? ' (Veteran)' : ''}: ${p}, level ${T.party[0].level}`; };
+function exportSave(i) { const x = store.all()[i]; if (!x) return; const txt = JSON.stringify(x.S), name = `oathbound-${x.S.party.map(h => h.name).join('-').toLowerCase()}.json`;
+  try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt], { type: 'application/json' })); a.download = name; document.body.append(a); a.click(); a.remove(); } catch (e) {}
+  const ta = h('textarea', { readonly: true, style: 'width:100%;height:120px;font:11px monospace;background:#111;color:#ccc' }); ta.value = txt;
+  modal(h('h2', null, 'Export save'), h('p', null, `A file called ${name} should have downloaded. If your browser blocked it, copy this text into a file instead; Import accepts either.`), ta, h('p', null, h('button', { class: 'primary', onclick: closeModal }, 'Close'))); }
+function importSave(i) { const ta = h('textarea', { placeholder: 'Or paste save text here', style: 'width:100%;height:120px;font:11px monospace;background:#111;color:#ccc' }), msg = h('p', { class: 'dim' }),
+    load = txt => { try { const T = JSON.parse(txt); if (!T || T.v !== VER || !T.party || !T.q) throw 0; store.put(i, T); closeModal(); render(); } catch (e) { msg.textContent = 'That is not a save from this version of the game.'; } },
+    file = h('input', { type: 'file', accept: '.json,application/json,text/plain', onchange: e => { const f = e.target.files[0]; if (f) f.text().then(load); } });
+  modal(h('h2', null, `Import into slot ${i + 1}`), h('p', null, 'Choose a save file, or paste its text. This replaces whatever is in the slot.'), file, ta, msg, h('p', { class: 'row' }, h('button', { class: 'primary', onclick: () => load(ta.value) }, 'Import pasted text'), h('button', { onclick: closeModal }, 'Cancel'))); }
 const humansIdx = () => S.party.map((x, i) => x.ctrl === 'human' ? i : -1).filter(i => i >= 0);
 const leader = () => { const hs = humansIdx(); return S.party[hs[S.leader % hs.length]]; };
 const who = x => x.ctrl === 'human' ? x.player : 'AI';
@@ -20,16 +32,16 @@ function render() {
   const main = $('main'); main.replaceChildren();
   if (!S) { $('hud').replaceChildren(); $('party').replaceChildren(); return renderSetup(main); }
   const lv = S.party[0].level, where = S.screen === 'town' ? 'In town' : S.screen === 'chapter' ? '' : 'Act ' + (S.pos < 0 ? 1 : S.map[S.pos].act);
-  $('hud').replaceChildren(h('span', { class: 'stat' }, S.q.title, S.diff ? h('b', { style: 'color:var(--red)' }, '  Veteran') : null), h('span', { class: 'stat' }, where), h('span', { class: 'stat' }, 'Level ', h('b', null, String(lv)), lv < maxLevel(S) ? ` (${S.xp}/${xpAt(S, lv)} xp)` : ''), h('span', { class: 'stat' }, 'Gold ', h('b', null, String(S.gold))));
+  $('hud').replaceChildren(h('span', { class: 'stat' }, S.q.title, S.diff ? h('b', { style: 'color:var(--red)' }, '  Veteran') : null), h('span', { class: 'stat' }, where), h('span', { class: 'stat' }, 'Level ', h('b', null, String(lv)), lv < maxLevel(S) ? ` (${S.xp}/${xpAt(S, lv)} xp)` : ''), h('span', { class: 'stat' }, 'Gold ', h('b', null, String(S.gold))), saveFail ? h('span', { class: 'stat', style: 'color:var(--red)' }, 'Saving failed: export your save') : '');
   renderParty();
   ({ map: renderMap, combat: renderCombat, event: renderEvent, loot: renderLoot, shop: renderShop, rest: renderRest, levelup: renderLevel, end: renderEnd, town: renderTown, chapter: renderChapter })[S.screen](main);
-  if (S.screen === 'end') store.set(null); else if (S.screen !== 'combat') store.set(S);
+  if (S.screen === 'end') store.put(slot, null); else if (S.screen !== 'combat') saveFail = !store.put(slot, S);
 }
 
 // ---------- setup ----------
 function renderSetup(main) {
   if (!seats) seats = ['warrior', 'rogue', 'mage', 'priest'].map((cls, i) => ({ ctrl: i ? 'ai' : 'human', cls, name: NAMES[cls] }));
-  const saved = store.get();
+  const saves = store.all(); if (saves[slot]) { const e = saves.findIndex(x => !x); if (e >= 0) slot = e; }
   const rows = seats.map((s, i) => h('div', { class: 'seat' },
     h('select', { onchange: e => { s.ctrl = e.target.value; render(); } }, ['human', 'ai', 'none'].map(v => h('option', { value: v, selected: s.ctrl === v }, { human: 'Human', ai: 'AI ally', none: 'Empty' }[v]))),
     h('input', { type: 'text', value: s.name, maxlength: 14, disabled: s.ctrl === 'none', oninput: e => { s.name = e.target.value; } }),
@@ -37,7 +49,11 @@ function renderSetup(main) {
   const used = seats.filter(s => s.ctrl !== 'none'), ok = used.some(s => s.ctrl === 'human');
   main.append(h('div', { class: 'card' }, h('h2', null, 'Gather your party'),
     h('p', null, 'A co-op fantasy adventure for one to four heroes. Each run is a freshly generated three-act quest: a villain, a motive, a twist, and a branching road to the lair. Human players share this screen and take turns; AI allies fill the other seats.'),
-    saved && saved.v === 4 ? h('p', null, h('button', { class: 'primary', onclick: () => { S = saved; render(); } }, `Continue: ${saved.camp ? 'campaign, ' : ''}${saved.q.title}`)) : null,
+    h('h3', null, 'Saved games'), saves.map((x, i) => h('div', { class: 'item', style: 'padding:6px 10px' }, h('div', { class: 'row' }, h('b', null, `Slot ${i + 1}`), x && x.S.v === VER ? h('span', null, slotLabel(x), h('span', { class: 'dim small' }, ` · ${x.S.q.title} · saved ${new Date(x.at).toLocaleString()}`)) : x ? h('span', { class: 'dim' }, 'A save from an older version, which cannot be loaded.') : h('span', { class: 'dim' }, 'Empty')),
+      h('div', { class: 'row', style: 'margin-top:4px' }, x && x.S.v === VER ? h('button', { class: 'primary small', onclick: () => { slot = i; S = x.S; render(); } }, 'Continue') : null, x && x.S.v === VER ? h('button', { class: 'small', onclick: () => exportSave(i) }, 'Export') : null,
+        h('button', { class: 'small', onclick: () => importSave(i) }, 'Import'), x ? h('button', { class: 'small', onclick: () => modal(h('h2', null, `Delete slot ${i + 1}?`), h('p', null, 'This cannot be undone. Export it first if you might want it back.'), h('p', { class: 'row' }, h('button', { class: 'primary', onclick: () => { store.put(i, null); closeModal(); render(); } }, 'Delete'), h('button', { onclick: closeModal }, 'Keep it'))) }, 'Delete') : null,
+        h('label', { class: 'small' }, h('input', { type: 'radio', name: 'slot', checked: slot === i, onchange: () => { slot = i; render(); } }), ' start the new game here')))),
+    h('h3', null, 'New game'),
     h('h3', null, 'Seats'), rows,
     h('p', null, 'Mode: ', h('select', { onchange: e => { mode = +e.target.value; } }, h('option', { value: 0, selected: !mode }, 'Single adventure: three acts, levels 1 to 5, about 40 minutes'), h('option', { value: 1, selected: !!mode }, 'Campaign: a five-chapter saga to level 10, then endless contracts'))),
     h('p', null, 'Difficulty: ', h('select', { onchange: e => { diff = +e.target.value; } }, h('option', { value: 0, selected: !diff }, 'Standard'), h('option', { value: 1, selected: !!diff }, 'Veteran: tougher enemies that focus their attacks, less healing between fights'))),
@@ -45,7 +61,7 @@ function renderSetup(main) {
     h('p', { class: 'dim small' }, 'A full party of four with a Priest is the gentlest start. Smaller parties face fewer and weaker enemies; a lone hero gets one second wind per fight.'),
     h('p', null, h('button', { class: 'primary', disabled: !ok, onclick: begin }, 'Begin the adventure'), ok ? '' : ' At least one seat must be human.')));
 }
-function begin() { let p = 0; const list = seats.filter(s => s.ctrl !== 'none').map(s => ({ cls: s.cls, ctrl: s.ctrl, name: (s.name || '').trim() || NAMES[s.cls], player: s.ctrl === 'human' ? 'Player ' + (++p) : '' }));
+function begin() { const cur = store.all()[slot]; if (cur && !begin.ok) return modal(h('h2', null, `Overwrite slot ${slot + 1}?`), h('p', null, `It holds: ${slotLabel(cur)}.`), h('p', { class: 'row' }, h('button', { class: 'primary', onclick: () => { begin.ok = true; closeModal(); begin(); } }, 'Overwrite'), h('button', { onclick: closeModal }, 'Cancel'))); begin.ok = false; let p = 0; const list = seats.filter(s => s.ctrl !== 'none').map(s => ({ cls: s.cls, ctrl: s.ctrl, name: (s.name || '').trim() || NAMES[s.cls], player: s.ctrl === 'human' ? 'Player ' + (++p) : '' }));
   S = (mode ? newCampaign : newRun)((Date.now() ^ (Math.random() * 1e9)) | 0, list, diff); sel = null; render(); }
 
 // ---------- party sidebar and hero sheet ----------
@@ -136,6 +152,7 @@ function renderMap(main) {
   const legend = Object.keys(NODE).map(t => { const s = sv('svg', { viewBox: '-20 -20 40 40', width: 26, height: 26, style: 'vertical-align:middle' }, sv('circle', { r: 17, fill: '#f3e6c4', stroke: NODE[t][0], 'stroke-width': 3.2 }), nodeIcon(t)); const sp = h('span', null); sp.append(s, ' ' + NODE[t][1]); return sp; });
   main.append(h('div', { class: 'card' }, h('h2', null, q.title),
     h('p', null, `${q.name}, ${q.vtitle}, ${q.motive}. Your road runs from ${q.town} through ${q.region} to ${q.lair}.`),
+    S.q.mods && S.q.mods.length ? h('p', { class: 'small' }, h('b', { style: 'color:var(--red)' }, 'Contract conditions: '), S.q.mods.map(m => `${MODS[m][0]}: ${MODS[m][1]}`).join(' ')) : null,
     box, h('p', { class: 'row small' }, legend),
     h('p', null, humansIdx().length > 1 ? h('b', null, `${leader().player} (${leader().name}) chooses the road. `) : '', 'Pick one of the ringed stops. The red flag marks where you are.', S.nextMod ? h('span', { class: 'dim' }, ' ' + { ambush: 'You will have the jump on the next enemy.', surprised: 'The next enemy will have the jump on you.', exposed: 'The next enemy starts Exposed.' }[S.nextMod]) : '')));
 }
@@ -203,7 +220,7 @@ function openPack() {
   out.push(h('h2', { style: 'margin-top:14px' }, `In the pack (${S.stash.length})`));
   if (!S.stash.length) out.push(h('p', { class: 'dim' }, 'Empty.'));
   for (const [k, title] of groups) { const list = S.stash.map((it, si) => [it, si]).filter(e => e[0].k === k).sort((a, b) => b[0].r - a[0].r || b[0].tier - a[0].tier); if (!list.length) continue;
-    out.push(h('h3', null, title), list.map(([it, si]) => itemCard(it, free ? h('div', { class: 'row' }, S.party.map((x, i) => canUse(x, it) ? h('button', { onclick: () => { fromStash(S, si, i); again(); } }, x.name, h('span', { class: 'dim small' }, x.gear[slotOf(x, it)] ? ` (swaps out ${x.gear[slotOf(x, it)].n})` : ' (empty slot)')) : null), S.screen === 'shop' || S.screen === 'town' ? h('button', { onclick: () => { sellStash(S, si); again(); } }, `Sell (${it.price >> 1} gold)`) : null) : null))); }
+    out.push(h('h3', null, title), list.map(([it, si]) => itemCard(it, free ? h('div', { class: 'row' }, S.party.map((x, i) => canUse(x, it) ? h('button', { onclick: () => { fromStash(S, si, i); again(); } }, x.name, h('span', { class: 'dim small' }, x.gear[slotOf(x, it)] ? ` (swaps out ${x.gear[slotOf(x, it)].n})` : ' (empty slot)')) : null), S.screen === 'shop' || S.screen === 'town' ? h('button', { onclick: () => { sellStash(S, si); again(); } }, `Sell (${sellValue(S, it)} gold)`) : null) : null))); }
   out.push(h('p', null, h('button', { class: 'primary', onclick: closeModal }, 'Close')));
   modal(out);
 }
@@ -243,21 +260,31 @@ function renderShop(main) {
 // ---------- campaign: town and chapter summary ----------
 function renderTown(main) {
   const c = S.camp, q = S.q, sec = (title, open, ...kids) => { const d = h('details', { open, style: 'margin:10px 0;border-top:1px solid var(--line);padding-top:8px' }, h('summary', { style: 'cursor:pointer;color:var(--gold);font-size:17px' }, title)); d.append(...kids.flat(3).filter(k => k != null && k !== false)); return d; };
-  main.append(h('div', { class: 'card' }, h('h2', null, 'Lastlight'), h('p', null, 'Home, such as it is: an inn, a forge, a healer, and a notice board. Everyone is rested and at full health.', ` You have ${S.gold} gold.`),
-    h('div', { class: 'item r' + (c.ch === 5 ? 3 : c.ch > 5 ? 1 : 2) }, h('b', null, q.title), h('div', null, `${q.name}, ${q.vtitle}, ${q.motive}. The road runs through ${q.region} to ${q.lair}.`), h('div', { class: 'small dim' }, `Two acts. Enemies: ${FAM[q.fam].n}. ${FAM[q.fam].weak}`),
-      h('p', null, h('button', { class: 'primary', onclick: () => { startChapter(S); render(); } }, c.ch > 5 ? 'Take the contract' : 'Set out'))),
-    sec('Chronicle', c.done.length < 1, c.lore.map(t => h('p', null, t)), c.done.length ? h('p', { class: 'dim small' }, 'Defeated: ', c.done.map(d => `${d.name} (${d.title}), at level ${d.level}`).join('; '), '.') : null, h('p', { class: 'dim small' }, `Times driven back: ${c.wipes}.`, c.saga ? ' The saga is complete; contracts grow harder without end.' : c.ch >= 4 ? ` The enemy is known: ${ARCH[c.arch].name}, ${ARCH[c.arch].title}.` : ' Someone is behind all this. You do not yet know who.')),
-    sec('Merchant', true, shopGrid(), h('p', { class: 'row' }, healButton(), h('button', { onclick: openPack }, `Vault and pack (${S.stash.length}): sort, hand out and sell gear`))),
+  const brief = (Q, k) => h('div', { class: 'item r' + (Q.mods.length ? Math.min(3, 1 + Q.mods.length) : c.ch === 5 ? 3 : 2) }, h('b', null, Q.title), h('div', null, `${Q.name}, ${Q.vtitle}, ${Q.motive}. The road runs through ${Q.region} to ${Q.lair}.`), h('div', { class: 'small dim' }, `Two acts. Enemies: ${FAM[Q.fam].n}. ${FAM[Q.fam].weak}`),
+      Q.mods.map(m => h('div', { class: 'small', style: 'color:#e39a7d' }, `${MODS[m][0]}: ${MODS[m][1]}`)), c.board ? h('div', { class: 'small' }, `Reward: ${Math.round((60 + 25 * Q.rank) * (1 + 0.35 * Q.mods.length) * (1 + perk(S, 'gold')))} gold${Q.rank >= 3 ? `, ${Math.round((0.3 + 0.2 * Q.mods.length) * 100)}% chance of a relic from the boss` : ''}.`) : null,
+      h('p', null, h('button', { class: 'primary', onclick: () => { startChapter(S, k); render(); } }, c.board ? 'Take this contract' : 'Set out')));
+  const home = c.estate ? 'Oathkeep' : 'Lastlight', built = c.estate ? Object.keys(c.estate.rooms).length : 0;
+  main.append(h('div', { class: 'card' }, h('h2', null, home), h('p', null, c.estate ? `Your own keep, ${built ? `with ${built} of ${Object.keys(ROOMS).length} rooms restored` : 'still mostly rubble'}. It has every service the town had, and the notice board follows you here.` : 'Home, such as it is: an inn, a forge, a healer, and a notice board.', ' Everyone is rested and at full health.', ` You have ${S.gold} gold.`),
+    c.board ? [h('h3', null, `The notice board (renown rank ${c.rank}, best completed ${c.best || 'none'})`), h('p', { class: 'small dim' }, 'Completing a contract at or above your rank raises it. Conditions make a contract harder and pay more.'), h('div', { class: 'grid3' }, c.board.map(brief))] : brief(q, 0),
+    c.estate ? sec('Build at Oathkeep', !built, Object.entries(ROOMS).map(([id, r]) => h('div', { class: 'item', style: 'padding:6px 10px' }, h('b', null, r[0]), ' ', h('span', { class: 'small' }, r[2]), ' ', c.estate.rooms[id] ? h('span', { class: 'small rn1' }, 'Built') : h('button', { class: 'small', disabled: S.gold < r[1], onclick: () => { buildRoom(S, id); render(); } }, `Build (${r[1]} gold)`)))) : null,
+    sec(`Trophies (${Object.keys(c.trophies).length} of ${Object.keys(TROPHY).length})`, false, h('p', { class: 'small dim' }, room(S, 'hall') ? 'On display in the trophy hall; every bonus is in effect.' : c.estate ? 'Build a trophy hall at Oathkeep to display these and gain their bonuses.' : 'Kept in a sack for now. A place to display them, and gain their bonuses, comes later.'),
+      Object.entries(TROPHY).map(([id, t]) => h('div', { class: 'small', style: 'margin:4px 0;opacity:' + (c.trophies[id] ? 1 : 0.5) }, h('b', { class: c.trophies[id] ? 'rn5' : '' }, c.trophies[id] ? t.n : 'Not yet won'), ` · ${t.d} · ${bonusText(t)}`))),
+    sec('Codex', false, h('p', { class: 'small dim' }, room(S, 'library') ? 'Each completed page grants its reward.' : 'Completed pages grant rewards once a library stands at the estate.'),
+      CODEX.map(pg => { const have = codexHave(S, pg.id), tot = pg.total(); return h('div', { class: 'small', style: 'margin:6px 0' }, h('b', { class: have >= tot ? 'rn5' : '' }, `${pg.n}: ${have} of ${tot}`), ` · reward: ${bonusText(pg)}`, h('div', { class: 'bar' }, h('i', { style: `width:${100 * have / tot}%;background:var(--gold)` })),
+        pg.id === 'set' ? h('div', { class: 'dim' }, Object.entries(SETS).map(([k, st]) => `${st.n}: ${st.pieces.map((p, pi) => c.codex.set[k + pi] ? p.n : '?').join(', ')}`).join(' · ')) : pg.id === 'uq' ? h('div', { class: 'dim' }, Object.entries(UNIQUES).map(([k, u]) => c.codex.uq[k] ? u.n : '?').join(', ')) : null); })),
+    sec(`Deeds (${Object.keys(c.ach).length} of ${ACH.length})`, false, h('p', { class: 'small dim' }, 'Each deed pays 25 gold the moment it is done.'), ACH.map(([id, n, d, goal, fn]) => { const v = Math.min(goal, fn(S)); return h('div', { class: 'small', style: 'margin:5px 0;opacity:' + (c.ach[id] ? 1 : 0.75) }, h('b', { class: c.ach[id] ? 'rn5' : '' }, n), ` · ${d}`, goal > 1 && !c.ach[id] ? ` (${v}/${goal})` : c.ach[id] ? ' · done' : '', !c.ach[id] && goal > 1 ? h('div', { class: 'bar' }, h('i', { style: `width:${100 * v / goal}%;background:var(--gold)` })) : null); })),
+    sec('Chronicle', c.done.length < 1 && !c.estate, c.lore.map(t => h('p', null, t)), c.done.length ? h('p', { class: 'dim small' }, 'Defeated: ', c.done.slice(-12).map(d => `${d.name} (${d.title})${d.rank ? ` on a rank ${d.rank} contract` : `, at level ${d.level}`}`).join('; '), '.') : null, h('p', { class: 'dim small' }, `Times driven back: ${c.wipes}.`, c.saga ? ' The saga is complete; contracts grow harder without end.' : c.ch >= 4 ? ` The enemy is known: ${ARCH[c.arch].name}, ${ARCH[c.arch].title}.` : ' Someone is behind all this. You do not yet know who.')),
+    sec('Merchant', !c.estate, shopGrid(), h('p', { class: 'row' }, healButton(), h('button', { onclick: openPack }, `Vault and pack (${S.stash.length}): sort, hand out and sell gear`))),
     sec('Smith', false, smithPanel()),
-    sec('Training hall', false, h('p', { class: 'small dim' }, `Swap a talent for ${TRAIN.talent} gold, or retrain a hero into their class's other path for ${TRAIN.sub} gold (talents carry across by position).`),
-      S.party.map((x, i) => h('div', { class: 'item', style: 'padding:6px 10px' }, h('b', null, `${x.name}, ${subName(x)}`), x.sub ? h('button', { class: 'small', style: 'margin-left:8px', disabled: S.gold < TRAIN.sub, onclick: () => { changeSub(S, i); render(); } }, `Retrain as ${Object.values(CLASSES[x.cls].subs).find(v => v.n !== subName(x)).n} (${TRAIN.sub})`) : h('span', { class: 'small dim' }, ' chooses a path at level 3'),
-        x.sub ? (x.tal || []).map((ch, k) => ch === undefined || ch === null ? null : h('div', { class: 'row small', style: 'margin-top:4px' }, h('span', { class: 'dim', style: 'min-width:60px' }, `Level ${k + 6}`), TALENTS[x.sub][k].map((t, o) => h('button', { class: 'small' + (ch === o ? ' on' : ''), disabled: ch === o || S.gold < TRAIN.talent, title: fxText(t[1]), onclick: () => { retrain(S, i, k, o); render(); } }, `${t[0]}: ${fxText(t[1])}`)))) : null,
+    sec('Training hall', false, h('p', { class: 'small dim' }, `Swap a talent for ${trainCost(S, 'talent')} gold, or retrain a hero into their class's other path for ${trainCost(S, 'sub')} gold (talents carry across by position).`),
+      S.party.map((x, i) => h('div', { class: 'item', style: 'padding:6px 10px' }, h('b', null, `${x.name}, ${subName(x)}`), x.sub ? h('button', { class: 'small', style: 'margin-left:8px', disabled: S.gold < trainCost(S, 'sub'), onclick: () => { changeSub(S, i); render(); } }, `Retrain as ${Object.values(CLASSES[x.cls].subs).find(v => v.n !== subName(x)).n} (${trainCost(S, 'sub')})`) : h('span', { class: 'small dim' }, ' chooses a path at level 3'),
+        x.sub ? (x.tal || []).map((ch, k) => ch === undefined || ch === null ? null : h('div', { class: 'row small', style: 'margin-top:4px' }, h('span', { class: 'dim', style: 'min-width:60px' }, `Level ${k + 6}`), TALENTS[x.sub][k].map((t, o) => h('button', { class: 'small' + (ch === o ? ' on' : ''), disabled: ch === o || S.gold < trainCost(S, 'talent'), title: fxText(t[1]), onclick: () => { retrain(S, i, k, o); render(); } }, `${t[0]}: ${fxText(t[1])}`)))) : null,
         x.sub && !(x.tal || []).length ? h('div', { class: 'small dim' }, 'Talents begin at level 6.') : null)))));
 }
 function renderChapter(main) {
   const L = S.camp.last;
   main.append(h('div', { class: 'card' }, h('h2', null, L.win ? (L.ch === 5 ? 'The saga is won' : L.ch > 5 ? 'Contract fulfilled' : `Chapter ${L.ch} complete`) : 'Driven back'), h('p', { class: 'dim' }, L.title), L.lines.map(t => h('p', null, t)),
-    h('p', null, h('button', { class: 'primary', onclick: () => { closeChapter(S); render(); } }, 'Return to Lastlight'))));
+    h('p', null, h('button', { class: 'primary', onclick: () => { closeChapter(S); render(); } }, S.camp.estate ? 'Return to Oathkeep' : 'Return to Lastlight'))));
 }
 function renderRest(main) {
   const opt = (k, t, d) => h('button', { class: 'choice', onclick: () => { doRest(S, k); render(); } }, t, h('small', null, d));
@@ -291,11 +318,11 @@ function rules() {
     DEBUFFS.concat(['Guard', 'Taunt', 'Blessed', 'Hidden']).map(s => h('div', { class: 'small' }, h('span', { class: 'chip ' + s + (DEBUFFS.includes(s) ? '' : ' good') }, s), ' ', STATE_INFO[s])),
     h('p', null, h('b', null, 'Going down. '), 'A hero at zero health is down and takes a wound (12% less maximum health) until healed at a camp or merchant. Allies can help them up mid-fight. If everyone is down, the adventure ends.'),
     h('p', null, h('b', null, 'Gear. '), 'A border colour shows rarity: ', RAR.map((n, k) => h('b', { class: 'rn' + k }, n + ' ')), '. Weapons, armour and off-hand items gain a step for each magical property. Set pieces grant bonuses when one hero wears two or three from the same set. Swapped-out gear goes to the shared pack, where any hero who can use it may take it. Merchants also keep a smith who can improve, enchant and reforge what you wear.'),
-    h('p', null, h('b', null, 'Campaign. '), 'Five two-act chapters lead to a hidden enemy, with a town between them for trade, smithing, training and the chronicle. Heroes reach level 10, choosing one of two talents at each level from 6. Being wiped out costs half your gold and a wound each, and the chapter can be tried again. After the saga, contracts continue for as long as you can survive them.'),
+    h('p', null, h('b', null, 'Campaign. '), 'Five two-act chapters lead to a hidden enemy, with a town between them for trade, smithing, training and the chronicle. Heroes reach level 10, choosing one of two talents at each level from 6. Being wiped out costs half your gold and a wound each (the town healer clears them all), and the chapter can be tried again. After the saga the party is given an estate, Oathkeep, with every town service and rooms to build, and takes contracts from a notice board: higher ranks and harsher conditions pay more, and from rank 3 bosses can drop relics, unique items found nowhere else. Trophies, a codex of everything found and a list of deeds track what the party has done; trophies and completed codex pages grant small permanent bonuses once the trophy hall and library are built.'),
     h('p', null, h('b', null, 'Checks. '), 'Outside combat the best-suited hero rolls a d20 plus the named stat. The odds are shown before you choose.'),
     h('p', null, h('button', { class: 'primary', onclick: closeModal }, 'Close')));
 }
 $('helpb').onclick = rules;
-$('newb').onclick = () => { if (!S) return; modal(h('h2', null, 'Abandon this adventure?'), h('p', null, 'Your current run will be lost.'), h('p', { class: 'row' }, h('button', { class: 'primary', onclick: () => { store.set(null); S = null; closeModal(); render(); } }, 'Abandon it'), h('button', { onclick: closeModal }, 'Keep playing'))); };
+$('newb').onclick = () => { if (!S) return; modal(h('h2', null, 'Return to the main menu?'), h('p', null, S.screen === 'combat' ? 'The game was saved before this fight; leaving now means fighting it again from the start.' : `Your game is saved in slot ${slot + 1}.`), h('p', { class: 'row' }, h('button', { class: 'primary', onclick: () => { S = null; closeModal(); render(); } }, 'Main menu'), h('button', { onclick: closeModal }, 'Keep playing'))); };
 $('fast').onchange = () => {};
 render();

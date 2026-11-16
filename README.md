@@ -37,3 +37,4 @@ Co-op RPG, 1 to 4 heroes (human or AI), one generated three-act adventure per ru
 The game file is assembled from `oathbound/src/` with `sh oathbound/src/build.sh`.
 Tests: `node tests/oathbound/sim.js oathbound/index.html 300 warrior,rogue,mage,priest` (full AI runs) and `node tests/oathbound/uitest.js oathbound/index.html 10 1` (random clicks through the UI).
 Campaign mode: `node tests/oathbound/simc.js oathbound/index.html 60 warrior,rogue,mage,priest` plays whole five-chapter campaigns with an AI party and reports per-chapter win rates.
+Balance helpers: `tests/oathbound/talent.js` (each talent pair forced on matched seeds) and `tests/oathbound/subs.js` (win rate with each subclass forced). Add a fifth argument to `simc.js` above 5 to play contracts after the saga, e.g. `15` for ten contracts.
