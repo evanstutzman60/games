@@ -11,9 +11,11 @@ const store = { all() { try { const a = JSON.parse(localStorage.getItem(SAVE)); 
 let slot = 0, saveFail = false;
 const slotLabel = x => { const T = x.S, p = T.party.map(h => h.name).join(', '); return `${T.camp ? (T.camp.saga ? `Renowned heroes, contract rank ${T.camp.rank}` : `Campaign, chapter ${T.camp.ch}`) : 'Single adventure'}${T.diff ? ' (Veteran)' : ''}: ${p}, level ${T.party[0].level}`; };
 function exportSave(i) { const x = store.all()[i]; if (!x) return; const txt = JSON.stringify(x.S), name = `oathbound-${x.S.party.map(h => h.name).join('-').toLowerCase()}.json`;
-  try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt], { type: 'application/json' })); a.download = name; document.body.append(a); a.click(); a.remove(); } catch (e) {}
+  // inside Claude the page asks the viewer for permission to save; on a normal web page a plain download link works
+  const plain = () => { try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt], { type: 'application/json' })); a.download = name; document.body.append(a); a.click(); a.remove(); } catch (e) {} };
+  if (window.claude && window.claude.use) window.claude.use('downloads').then(d => d ? d.save({ filename: name, data: txt }).catch(() => {}) : plain()).catch(plain); else plain();
   const ta = h('textarea', { readonly: true, style: 'width:100%;height:120px;font:11px monospace;background:#111;color:#ccc' }); ta.value = txt;
-  modal(h('h2', null, 'Export save'), h('p', null, `A file called ${name} should have downloaded. If your browser blocked it, copy this text into a file instead; Import accepts either.`), ta, h('p', null, h('button', { class: 'primary', onclick: closeModal }, 'Close'))); }
+  modal(h('h2', null, 'Export save'), h('p', null, `You should be offered a file called ${name} to save. If that does not appear, copy this text into a file instead; Import accepts either.`), ta, h('p', null, h('button', { class: 'primary', onclick: closeModal }, 'Close'))); }
 function importSave(i) { const ta = h('textarea', { placeholder: 'Or paste save text here', style: 'width:100%;height:120px;font:11px monospace;background:#111;color:#ccc' }), msg = h('p', { class: 'dim' }),
     load = txt => { try { const T = JSON.parse(txt); if (!T || T.v !== VER || !T.party || !T.q) throw 0; store.put(i, T); closeModal(); render(); } catch (e) { msg.textContent = 'That is not a save from this version of the game.'; } },
     file = h('input', { type: 'file', accept: '.json,application/json,text/plain', onchange: e => { const f = e.target.files[0]; if (f) f.text().then(load); } });
