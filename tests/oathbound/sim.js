@@ -1,0 +1,13 @@
+// Headless full-run simulation. Usage: node sim.js <logic.js|index.html> <runs> [party e.g. warrior,rogue,mage,priest] [seedBase]
+const fs=require('fs');let src=fs.readFileSync(process.argv[2],'utf8');if(src.includes('// ===LOGIC-START==='))src=src.split('// ===LOGIC-START===')[1].split('// ===LOGIC-END===')[0];
+eval(src+`
+const N=+process.argv[3]||100,party=(process.argv[4]||'warrior,rogue,mage,priest').split(','),base=+process.argv[5]||1000;
+let win=0,acts=[0,0,0,0],lv=0,nodes=0,downs=0,combos=0,fights=0,rounds=0,steps=0,bossReach=0,byV={},lvlAtBoss=0;const t0=Date.now();
+for(let g=0;g<N;g++){const S=newRun(base+g,party.map((c,i)=>({cls:c,name:CLASSES[c].n+(i+1),ctrl:'ai'})));let n=0;
+ while(S.screen!=='end'){const sc=S.screen;if(sc==='combat'&&S.C.over){rounds+=S.C.round;if(S.C.boss)0;} if(sc==='combat'&&!S.C.over&&S.C.boss&&S.C.round===1&&!S._b){S._b=1;bossReach++;lvlAtBoss+=S.party[0].level}
+  if(!autoStep(S))throw new Error('stuck on '+S.screen+' seed '+(base+g));if(++n>20000)throw new Error('loop seed '+(base+g)+' '+S.screen+' round '+(S.C&&S.C.round));
+  if(S.screen!=="combat")for(const h of S.party)if(!(h.hp>=0)||h.hp>maxHp(h)||h.eq.length>4)throw new Error('bad hero '+JSON.stringify(h))}
+ JSON.parse(JSON.stringify(S));steps+=n;const v=S.q.boss;byV[v]=byV[v]||[0,0];byV[v][1]++;
+ if(S.result==='victory'){win++;byV[v][0]++}else acts[S.map[S.pos].act]++;lv+=S.party[0].level;nodes+=S.stats.nodes;downs+=S.stats.downs;combos+=S.stats.combos;fights+=S.stats.fights}
+console.log(party.join(',').padEnd(34),'win',(win/N*100).toFixed(0)+'%','| died in act',acts.slice(1).join('/'),'| reached boss',bossReach,'(avg level',(lvlAtBoss/Math.max(1,bossReach)).toFixed(1)+')','| fights',(fights/N).toFixed(1),'rounds/fight',(rounds/fights).toFixed(1),'| downs',(downs/N).toFixed(1),'combos',(combos/N).toFixed(0),'|',Object.entries(byV).map(([k,v])=>k+' '+v[0]+'/'+v[1]).join(' '),'|',((Date.now()-t0)/1000).toFixed(1)+'s');
+`);
