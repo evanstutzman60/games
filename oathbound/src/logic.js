@@ -490,7 +490,7 @@ const RELICS = ['Crown of Thorns', 'Lantern of Souls', 'Horn of Winter', 'Black 
 const TWISTS = ['betrayal', 'puppet', 'kin', 'rivals', 'toolate'];
 function newQuest(S) {
   const v = pick(S, VILLAINS), q = { vi: VILLAINS.indexOf(v), name: v.name, vtitle: v.title, fam: v.fam, boss: v.boss, lt: v.lt, minions: v.m, lair: pick(S, v.lair), region: pick(S, REGIONS), town: pick(S, TOWNS), patron: pick(S, PATRONS), relic: pick(S, RELICS), twist: pick(S, TWISTS), bossHp: 0, flags: {}, used: [] };
-  q.motive = fill({ q }, pick(S, MOTIVES).t); q.title = `${v.title.replace(/^the /, 'The ')} of ${q.lair.replace(/^the /, '')}`; return q;
+  q.motive = fill({ q }, pick(S, MOTIVES).t); q.title = `${v.title.replace(/^the /, 'The ')} of ${q.lair}`; return q;
 }
 function fill(S, t) { const q = S.q; return t.replace(/\{V\}/g, q.name).replace(/\{P\}/g, q.region).replace(/\{L\}/g, q.lair).replace(/\{M\}/g, q.minions).replace(/\{T\}/g, q.patron).replace(/\{H\}/g, q.town).replace(/\{R\}/g, 'the ' + q.relic); }
 
@@ -655,30 +655,35 @@ function eventGive(S, hi) { const r = S.ev.result, it = r.items[0]; if (!it) ret
 function continueEvent(S) { const r = S.ev.result; if (!r || r.items.length) return false; S.ev = null; if (r.fight) startCombat(S, encounter(S, r.fight)); else finishNode(S); return true; }
 
 // ---------- map ----------
+// Three acts, one band of the map each, snaking left-to-right, right-to-left, left-to-right. Every choice layer has three lanes
+// and a fixed mix of stop types, so no route is starved of fights, rest or trade.
 function genMap(S) {
   const nodes = [], layers = []; let x = 0;
-  const add = (act, type, extra) => { const n = { id: nodes.length, act, x, type, next: [], y: 0, ...extra }; nodes.push(n); return n.id; };
+  const add = (act, type, extra) => { const n = { id: nodes.length, act, x, type, next: [], lane: 1, ...extra }; nodes.push(n); return n.id; };
+  const single = (act, type, extra) => { layers.push([add(act, type, extra)]); x++; };
   for (let act = 1; act <= 3; act++) {
-    if (act === 1) { layers.push([add(1, 'event', { ev: 'hook' })]); x++; }
-    for (let l = 0; l < 4; l++) { const w = l === 3 ? 2 : 2 + ri(S, 2), row = [], types = [];
-      for (let k = 0; k < w; k++) { let t; do { const r = rnd(S); t = l === 0 ? (r < 0.6 ? 'fight' : 'event') : r < 0.42 ? 'fight' : r < 0.74 ? 'event' : r < 0.84 ? 'shop' : r < 0.94 ? 'rest' : act > 1 ? 'elite' : 'fight'; } while (t !== 'fight' && types.includes(t)); types.push(t); }
-      if (l === 1 && !types.includes('shop')) types[ri(S, w)] = 'shop'; if (l === 3) { types[0] = 'rest'; types[1] = rnd(S) < 0.5 ? 'shop' : 'event'; }
-      if (l === 2 && !types.includes('fight')) types[0] = 'fight';
-      for (const t of shuffle(S, types)) row.push(add(act, t)); layers.push(row); x++; }
-    if (act === 2) { layers.push([add(2, 'event', { ev: 'tw_' + S.q.twist })]); x++; }
-    if (act === 3) { layers.push([add(3, 'event', { ev: 'lair' })]); x++; }
-    layers.push([add(act, act === 3 ? 'boss' : 'elite', { lt: true })]); x++;
+    if (act === 1) single(1, 'event', { ev: 'hook' });
+    const wild = () => pick(S, act > 1 ? ['elite', 'event', 'fight'] : ['event', 'fight']);
+    const decks = [['fight', 'fight', 'event'], ['fight', 'event', 'shop'], ['fight', 'event', wild()], ['rest', rnd(S) < 0.5 ? 'fight' : 'event', rnd(S) < 0.5 ? 'shop' : 'fight']];
+    for (const deck of decks) { layers.push(shuffle(S, deck).map((t, lane) => add(act, t, { lane }))); x++; }
+    if (act === 2) single(2, 'event', { ev: 'tw_' + S.q.twist });
+    if (act === 3) single(3, 'event', { ev: 'lair' });
+    single(act, act === 3 ? 'boss' : 'elite', { lt: true });
   }
   for (let i = 0; i + 1 < layers.length; i++) { const a = layers[i], b = layers[i + 1];
-    a.forEach((id, k) => { const j = a.length === 1 ? -1 : Math.round(k * (b.length - 1) / (a.length - 1)); if (j < 0) nodes[id].next = b.slice(); else { nodes[id].next.push(b[j]); const alt = j + (rnd(S) < 0.5 ? 1 : -1); if (b[alt] !== undefined && rnd(S) < 0.6) nodes[id].next.push(b[alt]); } });
-    b.forEach((id, j) => { if (!a.some(p => nodes[p].next.includes(id))) nodes[a[Math.min(a.length - 1, Math.round(j * (a.length - 1) / Math.max(1, b.length - 1)))]].next.push(id); });
-    a.forEach((id, k) => { nodes[id].y = (k + 0.5) / a.length; nodes[id].next.sort((p, q) => p - q); }); }
-  const last = layers[layers.length - 1]; nodes[last[0]].y = 0.5;
+    if (a.length === 1 || b.length === 1) { for (const id of a) nodes[id].next = b.slice(); continue; }
+    a.forEach((id, k) => { nodes[id].next.push(b[k]); const d = k === 0 ? 1 : k === 2 ? -1 : rnd(S) < 0.5 ? 1 : -1;
+      if (rnd(S) < 0.55 && !nodes[a[k + d]].next.includes(b[k])) nodes[id].next.push(b[k + d]); nodes[id].next.sort((p, q) => p - q); }); }
+  // positions on a 960 x 660 sheet
+  const perAct = [0, 0, 0, 0]; for (const l of layers) perAct[nodes[l[0]].act]++;
+  const seenCol = [0, 0, 0, 0];
+  for (const l of layers) { const act = nodes[l[0]].act, col = seenCol[act]++, f = perAct[act] === 1 ? 0.5 : col / (perAct[act] - 1), fx = act === 2 ? 1 - f : f;
+    for (const id of l) { const n = nodes[id], one = l.length === 1; n.px = Math.round(95 + fx * 770 + (one ? 0 : (rnd(S) - 0.5) * 30) + (act > 1 && col === 0 ? (act === 2 ? -1 : 1) * (2 - n.lane) * 46 : 0)); n.py = Math.round(140 + (act - 1) * 200 + (one ? 0 : (n.lane - 1) * 62 + (rnd(S) - 0.5) * 18)); } }
   S.map = nodes; S.layers = layers.length;
 }
 function options(S) { return S.pos < 0 ? [0] : S.map[S.pos].next; }
 function encounter(S, kind) {
-  const node = S.map[S.pos], act = node.act, n = S.party.length, prog = (node.x % 6) / 12, lv = act * 1.5 - 0.5 + prog;
+  const node = S.map[S.pos], act = node.act, n = S.party.length, prog = S.map.filter(m => m.act === act && m.x < node.x && m.lane === 1).length / 14, lv = act * 1.5 - 0.5 + prog;
   const fam = kind === 'boss' || node.lt || rnd(S) < 0.7 ? S.q.fam : pick(S, ['beast', 'bandit']);
   const pool = Object.keys(EN).filter(k => EN[k].fam === fam && !EN[k].elite && !EN[k].boss && (EN[k].act || 1) <= act), list = [];
   if (kind === 'boss') { list.push(S.q.boss); for (let k = 0; k < Math.max(0, n - 2); k++) list.push(pick(S, pool)); }
@@ -711,7 +716,7 @@ function closeLevel(S) { if (!S.lvl || S.lvl.need.some(Boolean)) return false; S
 function setEq(S, hi, ids) { const h = S.party[hi], k = known(h); if (ids.length > 4 || ids.some(x => !k.includes(x)) || new Set(ids).size !== ids.length) return false; h.eq = ids.slice(); return true; }
 
 function newRun(seed, seats) {
-  const S = { v: 1, seed: seed | 0, seed0: seed | 0, party: seats.map(newHero), gold: 20, xp: 0, bag: [{ id: 'potion', qty: 2 }], pos: -1, screen: 'map', C: null, ev: null, loot: null, shop: null, lvl: null, nextMod: null, leader: 0, result: null,
+  const S = { v: 2, seed: seed | 0, seed0: seed | 0, party: seats.map(newHero), gold: 20, xp: 0, bag: [{ id: 'potion', qty: 2 }], pos: -1, screen: 'map', C: null, ev: null, loot: null, shop: null, lvl: null, nextMod: null, leader: 0, result: null,
     stats: { fights: 0, kills: 0, downs: 0, combos: 0, checks: 0, passed: 0, nodes: 0 } };
   for (let k = 0; k < 5; k++) rnd(S); S.q = newQuest(S); genMap(S); return S;
 }

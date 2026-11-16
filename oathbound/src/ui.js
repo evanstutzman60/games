@@ -10,7 +10,7 @@ const leader = () => { const hs = humansIdx(); return S.party[hs[S.leader % hs.l
 const who = x => x.ctrl === 'human' ? x.player : 'AI';
 const speed = () => $('fast').checked ? 120 : 650;
 const subName = x => x.sub ? CLASSES[x.cls].subs[x.sub].n : CLASSES[x.cls].n;
-function modal(...kids) { const m = $('mbody'); m.replaceChildren(...kids.flat()); $('modal').className = 'show'; }
+function modal(...kids) { const m = $('mbody'); m.replaceChildren(...kids.flat(3).filter(k => k != null && k !== false)); $('modal').className = 'show'; }
 function closeModal() { $('modal').className = ''; }
 const hpBar = (hp, max) => h('div', { class: 'bar' + (hp / max < 0.35 ? ' low' : '') }, h('i', { style: `width:${Math.max(0, Math.min(100, 100 * hp / max))}%` }));
 
@@ -36,7 +36,7 @@ function renderSetup(main) {
   const used = seats.filter(s => s.ctrl !== 'none'), ok = used.some(s => s.ctrl === 'human');
   main.append(h('div', { class: 'card' }, h('h2', null, 'Gather your party'),
     h('p', null, 'A co-op fantasy adventure for one to four heroes. Each run is a freshly generated three-act quest: a villain, a motive, a twist, and a branching road to the lair. Human players share this screen and take turns; AI allies fill the other seats.'),
-    saved && saved.v === 1 ? h('p', null, h('button', { class: 'primary', onclick: () => { S = saved; render(); } }, `Continue: ${saved.q.title}`)) : null,
+    saved && saved.v === 2 ? h('p', null, h('button', { class: 'primary', onclick: () => { S = saved; render(); } }, `Continue: ${saved.q.title}`)) : null,
     h('h3', null, 'Seats'), rows,
     h('div', { class: 'grid3' }, [...new Set(used.map(s => s.cls))].map(c => h('div', { class: 'item small' }, h('b', null, CLASSES[c].n), ' ', CLASSES[c].blurb, h('div', { class: 'dim' }, 'At level 3: ', Object.values(CLASSES[c].subs).map(x => x.n).join(' or '), '.')))),
     h('p', { class: 'dim small' }, 'A full party of four with a Priest is the gentlest start. Smaller parties face fewer and weaker enemies; a lone hero gets one second wind per fight.'),
@@ -69,23 +69,68 @@ function sheet(i) {
 }
 
 // ---------- map ----------
-const NODE = { fight: ['⚔', '#7a3b2e', 'Fight'], elite: ['☠', '#8a2d52', 'Elite fight'], boss: ['♛', '#6b3fa0', 'The lair'], event: ['?', '#3d5f7a', 'Encounter'], shop: ['$', '#7a6520', 'Merchant'], rest: ['☾', '#3c6b45', 'Camp'] };
+const NODE = { fight: ['#8a3324', 'Fight'], elite: ['#6b1d43', 'Elite fight'], boss: ['#45267a', 'The lair'], event: ['#2f5d7c', 'Encounter'], shop: ['#8a6a12', 'Merchant'], rest: ['#3d6b3a', 'Camp'] };
+const NS = 'http://www.w3.org/2000/svg', INK = '#3b2a1a';
+function sv(tag, a, ...kids) { const e = document.createElementNS(NS, tag); for (const k in a || {}) if (a[k] != null && a[k] !== false) { if (k === 'onclick') e.onclick = a[k]; else e.setAttribute(k, a[k]); }
+  for (const c of kids.flat(3)) { if (c == null || c === false) continue; if (typeof c === 'string') e.textContent = c; else e.append(c); } return e; }
+const ink = (d, extra) => sv('path', { d, fill: 'none', stroke: INK, 'stroke-width': 1.8, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', ...extra });
+function nodeIcon(type) {
+  if (type === 'fight') return [ink('M-8,8 L7,-8 M8,8 L-7,-8 M-9,3 L-3,9 M3,9 L9,3')];
+  if (type === 'elite') return [ink('M-7,-2 a7,7 0 1 1 14,0 q0,4 -3,5 v4 h-8 v-4 q-3,-1 -3,-5 z M-2,7 v3 M2,7 v3', { fill: '#f6ecd0' }), sv('circle', { cx: -3, cy: -2, r: 1.8, fill: INK }), sv('circle', { cx: 3, cy: -2, r: 1.8, fill: INK })];
+  if (type === 'boss') return [ink('M-11,10 V-3 h3 v3 h3 V-10 h2.5 v3 h5 v-3 h2.5 V0 h3 v-3 h3 V10 z', { fill: '#d9c8a0' }), ink('M-2.5,10 v-5 a2.5,2.5 0 0 1 5,0 v5', { fill: INK })];
+  if (type === 'event') return [sv('text', { x: 0, y: 7, 'text-anchor': 'middle', 'font-size': 20, 'font-weight': 'bold', 'font-family': 'Georgia, serif', fill: INK }, '?')];
+  if (type === 'shop') return [ink('M-6,-3 Q-11,9 0,9 Q11,9 6,-3 Z', { fill: '#e6c874' }), ink('M-5,-4 L5,-4 M-3,-4 L-5,-9 L5,-9 L3,-4')];
+  return [ink('M-10,8 L0,-9 L10,8 Z', { fill: '#cfe0b8' }), ink('M-3,8 L0,1 L3,8 M0,-9 L0,-12')];
+}
+function terrain(seed) {
+  let a = seed | 0; const r = () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, a | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const out = [], clear = (x, y, d) => S.map.every(n => (n.px - x) ** 2 + (n.py - y) ** 2 > d * d), soft = { opacity: 0.6, 'stroke-width': 1.3 };
+  // a river from the northern edge to the western one, between the first two legs of the road
+  let d = `M${560 + r() * 120},22`, x = 600, y = 22; while (y < 222) { y += 26; x += (r() - 0.5) * 40; d += ` Q${x + 18},${y - 13} ${x},${y}`; } while (x > 30) { x -= 46; y += (r() - 0.45) * 14; d += ` Q${x + 23},${y + (r() - 0.5) * 24} ${x},${y}`; }
+  out.push(sv('path', { d, fill: 'none', stroke: '#7fa3b5', 'stroke-width': 7, 'stroke-linecap': 'round', opacity: 0.75 }), sv('path', { d, fill: 'none', stroke: '#e8f0ea', 'stroke-width': 1.2, 'stroke-dasharray': '10 14', opacity: 0.8 }));
+  // a mountain range between the second and third legs
+  for (let mx = 270; mx < 890; mx += 30 + r() * 22) { const my = 432 + (r() - 0.5) * 22, sz = 15 + r() * 12; if (!clear(mx, my - sz / 2, 38)) continue;
+    out.push(ink(`M${mx - sz},${my} L${mx},${my - sz * 1.25} L${mx + sz},${my}`, { fill: '#d3c096', opacity: 0.9, 'stroke-width': 1.5 }), ink(`M${mx},${my - sz * 1.25} L${mx + sz * 0.2},${my - sz * 0.5} L${mx - sz * 0.15},${my - sz * 0.25}`, soft)); }
+  // woods in clumps, thinning toward the lair; then hills and grass
+  for (let c = 0; c < 20; c++) { const cx = 50 + r() * 860, cy = 60 + r() * 560, dead = cy > 470 && r() < 0.6;
+    for (let k = 0; k < 5 + r() * 5; k++) { const tx = cx + (r() - 0.5) * 80, ty = cy + (r() - 0.5) * 46; if (!clear(tx, ty, 30) || (ty > 400 && ty < 445 && tx > 230)) continue;
+      out.push(dead ? ink(`M${tx},${ty} v-11 M${tx},${ty - 6} l-4,-5 M${tx},${ty - 8} l4,-4`, soft) : ink(`M${tx},${ty} v-4 M${tx - 5},${ty - 4} q5,-14 10,0 z`, { fill: '#a9b683', opacity: 0.75, 'stroke-width': 1.2 })); } }
+  for (let k = 0; k < 16; k++) { const hx = 40 + r() * 880, hy = 50 + r() * 580; if (clear(hx, hy, 34)) out.push(ink(`M${hx - 12},${hy} q12,-13 24,0`, soft)); }
+  for (let k = 0; k < 40; k++) { const gx = 30 + r() * 900, gy = 40 + r() * 600; if (clear(gx, gy, 26)) out.push(ink(`M${gx - 3},${gy} l1,-4 M${gx},${gy} v-5 M${gx + 3},${gy} l-1,-4`, { opacity: 0.4, 'stroke-width': 1 })); }
+  return out;
+}
 function renderMap(main) {
-  const opts = options(S), W = S.layers * 86 + 40, H = 250, NS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('width', W); svg.setAttribute('height', H);
-  const mk = (tag, a, txt) => { const e = document.createElementNS(NS, tag); for (const k in a) e.setAttribute(k, a[k]); if (txt) e.textContent = txt; return e; };
-  const px = n => 40 + n.x * 86, py = n => 30 + n.y * (H - 60);
-  let act = 0; for (const n of S.map) if (n.act !== act) { act = n.act; svg.append(mk('text', { x: px(n) - 14, y: 16, fill: '#a39a88', 'font-size': 12 }, 'ACT ' + ['I', 'II', 'III'][act - 1])); }
-  for (const n of S.map) for (const t of n.next) { const m = S.map[t]; svg.append(mk('line', { x1: px(n), y1: py(n), x2: px(m), y2: py(m), stroke: n.done && (m.done || t === S.pos || (n.id === S.pos && opts.includes(t))) ? '#d9a441' : '#453d32', 'stroke-width': 2 })); }
-  for (const n of S.map) { const d = NODE[n.type], go = opts.includes(n.id), g = mk('g', { class: 'node' + (go ? ' go' : ''), opacity: n.done && n.id !== S.pos ? 0.45 : 1 });
-    g.append(mk('title', {}, d[2]), mk('circle', { cx: px(n), cy: py(n), r: n.type === 'boss' ? 21 : 17, fill: d[1], stroke: n.id === S.pos ? '#fff' : '#111', 'stroke-width': n.id === S.pos ? 3 : 1 }), mk('text', { x: px(n), y: py(n) + 6, 'text-anchor': 'middle', fill: '#fff', 'font-size': 17 }, d[0]));
-    if (go) g.onclick = () => { travel(S, n.id); sel = null; render(); }; svg.append(g); }
+  const opts = options(S), q = S.q, svg = sv('svg', { viewBox: '0 0 960 660', style: 'display:block;width:100%;min-width:700px' });
+  svg.append(sv('defs', null, sv('filter', { id: 'paper', x: 0, y: 0, width: '100%', height: '100%' }, sv('feTurbulence', { type: 'fractalNoise', baseFrequency: 0.035, numOctaves: 4, seed: Math.abs(S.seed0 % 97) }), sv('feColorMatrix', { values: '0 0 0 0 0.45  0 0 0 0 0.33  0 0 0 0 0.16  0 0 0 0.55 0' }), sv('feComposite', { operator: 'over', in2: 'SourceGraphic' }), sv('feBlend', { in: 'SourceGraphic', mode: 'multiply' })),
+    sv('radialGradient', { id: 'vig', cx: '50%', cy: '50%', r: '75%' }, sv('stop', { offset: '60%', 'stop-color': '#5b3d1a', 'stop-opacity': 0 }), sv('stop', { offset: '100%', 'stop-color': '#5b3d1a', 'stop-opacity': 0.45 }))),
+    sv('rect', { width: 960, height: 660, fill: '#e3d0a2', filter: 'url(#paper)' }), sv('rect', { width: 960, height: 660, fill: 'url(#vig)' }),
+    sv('rect', { x: 9, y: 9, width: 942, height: 642, fill: 'none', stroke: INK, 'stroke-width': 3 }), sv('rect', { x: 15, y: 15, width: 930, height: 630, fill: 'none', stroke: INK, 'stroke-width': 1 }));
+  svg.append(...terrain(S.seed0));
+  const lab = (x, y, t, size, extra) => sv('text', { x, y, fill: INK, 'font-family': 'Georgia, serif', 'font-size': size, 'text-anchor': 'middle', ...extra }, t);
+  svg.append(lab(480, 46, q.region.replace(/^the /, 'The ').toUpperCase(), 22, { 'letter-spacing': 6, 'font-weight': 'bold', opacity: 0.85 }));
+  ['I', 'II', 'III'].forEach((t, k) => svg.append(lab(k === 1 ? 915 : 45, 70 + k * 200, 'Act ' + t, 13, { 'font-style': 'italic', opacity: 0.7 })));
+  // compass
+  svg.append(sv('g', { transform: 'translate(908,606) scale(0.8)', opacity: 0.8 }, sv('circle', { r: 24, fill: 'none', stroke: INK, 'stroke-width': 1 }), ink('M0,-30 L5,0 L0,30 L-5,0 Z', { fill: '#cdb788' }), ink('M-30,0 L0,-5 L30,0 L0,5 Z', { fill: '#e9dab4', 'stroke-width': 1 }), lab(0, -34, 'N', 13, { 'font-weight': 'bold' })));
+  // roads
+  const walked = (n, m) => n.done && (m.done || m.id === S.pos);
+  for (const n of S.map) for (const t of n.next) { const m = S.map[t], mx = (n.px + m.px) / 2, my = (n.py + m.py) / 2, dx = m.px - n.px, dy = m.py - n.py, len = Math.hypot(dx, dy) || 1, bend = ((n.id * 7 + t * 13) % 9 - 4) * 3.2;
+    const d = `M${n.px},${n.py} Q${mx - dy / len * bend},${my + dx / len * bend} ${m.px},${m.py}`, live = n.id === S.pos && opts.includes(t);
+    svg.append(sv('path', { d, fill: 'none', stroke: walked(n, m) ? '#8a2f1d' : live ? '#b07a12' : '#6b5335', 'stroke-width': walked(n, m) ? 3.2 : live ? 2.8 : 1.8, 'stroke-dasharray': walked(n, m) ? null : '7 6', 'stroke-linecap': 'round', opacity: walked(n, m) || live ? 1 : 0.75 })); }
+  // start and end landmarks
+  const st = S.map[0], bo = S.map[S.map.length - 1];
+  svg.append(ink(`M${st.px - 44},${st.py + 6} v-9 l6,-6 l6,6 v9 z M${st.px - 30},${st.py + 12} v-8 l5,-5 l5,5 v8 z`, { fill: '#d9b98a', 'stroke-width': 1.3 }), lab(st.px + 2, st.py + 38, q.town, 14, { 'font-style': 'italic' }), lab(bo.px - 10, bo.py - 34, q.lair, 15, { 'font-style': 'italic', 'font-weight': 'bold' }));
+  for (const n of S.map) { const d = NODE[n.type], go = opts.includes(n.id), here = n.id === S.pos, r = n.type === 'boss' ? 23 : 17;
+    const g = sv('g', { class: 'node' + (go ? ' go' : ''), transform: `translate(${n.px},${n.py})`, opacity: n.done && !here ? 0.55 : 1, onclick: go ? () => { travel(S, n.id); sel = null; render(); } : null }, sv('title', null, d[1]),
+      go ? sv('circle', { class: 'ring', r: r + 6, fill: 'none', stroke: '#c8860d', 'stroke-width': 3.5 }) : null,
+      sv('circle', { r, fill: n.done && !here ? '#cdbb90' : '#f3e6c4', stroke: d[0], 'stroke-width': 3.2 }), nodeIcon(n.type),
+      here ? [ink(`M0,${-r} v-22`, { 'stroke-width': 2 }), ink(`M0,${-r - 22} l15,5 l-15,6 z`, { fill: '#b3261e', stroke: '#6d130d', 'stroke-width': 1.2 })] : null);
+    svg.append(g); }
   const box = h('div', { class: 'mapbox' }); box.append(svg);
-  main.append(h('div', { class: 'card' }, h('h2', null, S.q.title),
-    h('p', null, `${S.q.name}, ${VILLAINS[S.q.vi].title}, ${S.q.motive}. Your road runs through ${S.q.region} to ${S.q.lair}.`),
-    box, h('p', { class: 'row small' }, Object.values(NODE).map(d => h('span', null, h('span', { style: `display:inline-block;width:18px;text-align:center;border-radius:9px;background:${d[1]}` }, d[0]), ' ' + d[2]))),
-    h('p', null, humansIdx().length > 1 ? h('b', null, `${leader().player} (${leader().name}) chooses the road. `) : '', 'Pick one of the glowing stops.', S.nextMod ? h('span', { class: 'dim' }, ' ' + { ambush: 'You will have the jump on the next enemy.', surprised: 'The next enemy will have the jump on you.', exposed: 'The next enemy starts Exposed.' }[S.nextMod]) : '')));
-  const cur = S.pos < 0 ? 0 : px(S.map[S.pos]); box.scrollLeft = Math.max(0, cur - 200);
+  const legend = Object.keys(NODE).map(t => { const s = sv('svg', { viewBox: '-20 -20 40 40', width: 26, height: 26, style: 'vertical-align:middle' }, sv('circle', { r: 17, fill: '#f3e6c4', stroke: NODE[t][0], 'stroke-width': 3.2 }), nodeIcon(t)); const sp = h('span', null); sp.append(s, ' ' + NODE[t][1]); return sp; });
+  main.append(h('div', { class: 'card' }, h('h2', null, q.title),
+    h('p', null, `${q.name}, ${VILLAINS[q.vi].title}, ${q.motive}. Your road runs from ${q.town} through ${q.region} to ${q.lair}.`),
+    box, h('p', { class: 'row small' }, legend),
+    h('p', null, humansIdx().length > 1 ? h('b', null, `${leader().player} (${leader().name}) chooses the road. `) : '', 'Pick one of the ringed stops. The red flag marks where you are.', S.nextMod ? h('span', { class: 'dim' }, ' ' + { ambush: 'You will have the jump on the next enemy.', surprised: 'The next enemy will have the jump on you.', exposed: 'The next enemy starts Exposed.' }[S.nextMod]) : '')));
 }
 
 // ---------- combat ----------
@@ -121,7 +166,7 @@ function renderCombat(main) {
       h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { onclick: () => { sel = null; act(S, C, { k: 'defend' }); render(); } }, 'Defend'), h('button', { onclick: () => { sel = null; act(S, C, { k: 'move' }); render(); } }, `Move to ${cur.row === 'F' ? 'back' : 'front'} row`),
         downed ? h('button', { class: sel && sel.k === 'revive' ? 'on' : '', onclick: () => pickA({ k: 'revive' }) }, 'Help an ally up') : null,
         h('button', { disabled: !S.bag.length, class: bagOpen ? 'on' : '', onclick: () => { bagOpen = !bagOpen; sel = null; render(); } }, 'Supplies')),
-      bagOpen ? h('div', { class: 'row', style: 'margin-top:8px' }, S.bag.map(b => h('button', { class: sel && sel.k === 'item' && sel.id === b.id ? 'on' : '', disabled: !targetsFor(C, cur, { ...CONS[b.id], ty: 'ranged' }).length, title: CONS[b.id].d, onclick: () => { sel = { k: 'item', id: b.id }; bagOpen = true; render(); } }, `${CONS[b.id].n} x${b.qty}`))) : null);
+      h('div', { class: 'row', style: 'margin-top:8px' }, !bagOpen ? null : S.bag.map(b => h('button', { class: sel && sel.k === 'item' && sel.id === b.id ? 'on' : '', disabled: !targetsFor(C, cur, { ...CONS[b.id], ty: 'ranged' }).length, title: CONS[b.id].d, onclick: () => { sel = { k: 'item', id: b.id }; bagOpen = true; render(); } }, `${CONS[b.id].n} x${b.qty}`))));
     if (sel) { const d = sel.k === 'skill' ? skillDesc(SK[sel.id]) : sel.k === 'item' ? CONS[sel.id].d : 'Spend your turn to get a downed ally back on their feet at 20% health.';
       bar.append(h('p', { class: 'small' }, h('b', null, sel.k === 'skill' ? SK[sel.id].n : sel.k === 'item' ? CONS[sel.id].n : 'Help up'), ': ', d, ' ',
         targets && targets[0] === '-' ? h('button', { class: 'primary', onclick: () => fire('-') }, 'Use') : targets && targets.length ? h('span', { class: 'dim' }, 'Choose a glowing target.') : h('span', { class: 'dim' }, 'No valid target.'))); }
