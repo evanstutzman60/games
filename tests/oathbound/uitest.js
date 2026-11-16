@@ -16,7 +16,7 @@ const text=e=>typeof e==='string'?e:(e.kids||[]).map(text).join(' ');
 eval(js+`
 let done=0,wins=0,clicks=0,screens={},sheets=0;
 for(let run=0;run<RUNS;run++){S=null;seats=null;render();
- const cls=Object.keys(CLASSES);seats=[0,1,2,3].map(i=>({ctrl:i<HUM?'human':(i<2+run%3?'ai':'none'),cls:cls[(i+run)%4],name:'H'+i}));render();
+ diff=run%2;const cls=Object.keys(CLASSES);seats=[0,1,2,3].map(i=>({ctrl:i<HUM?'human':(i<2+run%3?'ai':'none'),cls:cls[(i+run)%4],name:'H'+i}));render();
  const b=walk(ids.main,[]).find(e=>text(e).startsWith('Begin'));b.onclick();
  for(let n=0;n<60000&&S&&S.screen!=='end';n++){
   screens[S.screen]=(screens[S.screen]||0)+1;
@@ -24,6 +24,7 @@ for(let run=0;run<RUNS;run++){S=null;seats=null;render();
   if(ids.modal.className==='show'){const mb=walk(ids.mbody,[]);const e=mb[Math.floor(R()*mb.length)];clicks++;if(e.tag==='input'){e.checked=!e.checked;e.onchange({target:e})}else e.onclick();if(R()<0.5)closeModal();continue}
   if(R()<0.02){sheet(Math.floor(R()*S.party.length));sheets++;continue}
   if(R()<0.004){rules();continue}
+  if(R()<0.03){openPack();continue}
   let bs=walk(ids.main,[]);if(!bs.length)throw new Error('no buttons on '+S.screen);
   if(S.screen==='combat'){const t=bs.filter(e=>/tgt/.test(e.className));if(t.length&&R()<0.9)bs=t;else{const sk=bs.filter(e=>e.tag==='button'&&!/Defend|Move to|Supplies/.test(text(e)));if(sk.length&&R()<0.85)bs=sk}}
   if(S.screen==='shop'&&R()<0.3)bs=bs.filter(e=>text(e)==='Leave');

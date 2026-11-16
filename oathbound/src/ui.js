@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id), SAVE = 'oathbound-v1';
 function h(tag, attrs, ...kids) { const e = document.createElement(tag);
   for (const k in attrs || {}) { const v = attrs[k]; if (k === 'class') e.className = v; else if (k.slice(0, 2) === 'on') e[k] = v; else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v); }
   for (const c of kids.flat(3)) { if (c == null || c === false || c === '') continue; e.append(c.nodeType ? c : document.createTextNode(c)); } return e; }
-let S = null, sel = null, bagOpen = false, timer = null, inspect = null, seats = null;
+let S = null, sel = null, bagOpen = false, timer = null, inspect = null, seats = null, diff = 0;
 const store = { get() { try { return JSON.parse(localStorage.getItem(SAVE)); } catch (e) { return null; } }, set(v) { try { v ? localStorage.setItem(SAVE, JSON.stringify(v)) : localStorage.removeItem(SAVE); } catch (e) {} } };
 const humansIdx = () => S.party.map((x, i) => x.ctrl === 'human' ? i : -1).filter(i => i >= 0);
 const leader = () => { const hs = humansIdx(); return S.party[hs[S.leader % hs.length]]; };
@@ -19,7 +19,7 @@ function render() {
   const main = $('main'); main.replaceChildren();
   if (!S) { $('hud').replaceChildren(); $('party').replaceChildren(); return renderSetup(main); }
   const lv = S.party[0].level;
-  $('hud').replaceChildren(h('span', { class: 'stat' }, S.q.title), h('span', { class: 'stat' }, 'Act ', h('b', null, String(S.pos < 0 ? 1 : S.map[S.pos].act))), h('span', { class: 'stat' }, 'Level ', h('b', null, String(lv)), lv < 5 ? ` (${S.xp}/${XP_AT[lv]} xp)` : ''), h('span', { class: 'stat' }, 'Gold ', h('b', null, String(S.gold))));
+  $('hud').replaceChildren(h('span', { class: 'stat' }, S.q.title, S.diff ? h('b', { style: 'color:var(--red)' }, '  Veteran') : null), h('span', { class: 'stat' }, 'Act ', h('b', null, String(S.pos < 0 ? 1 : S.map[S.pos].act))), h('span', { class: 'stat' }, 'Level ', h('b', null, String(lv)), lv < 5 ? ` (${S.xp}/${XP_AT[lv]} xp)` : ''), h('span', { class: 'stat' }, 'Gold ', h('b', null, String(S.gold))));
   renderParty();
   ({ map: renderMap, combat: renderCombat, event: renderEvent, loot: renderLoot, shop: renderShop, rest: renderRest, levelup: renderLevel, end: renderEnd })[S.screen](main);
   if (S.screen === 'end') store.set(null); else if (S.screen !== 'combat') store.set(S);
@@ -36,14 +36,15 @@ function renderSetup(main) {
   const used = seats.filter(s => s.ctrl !== 'none'), ok = used.some(s => s.ctrl === 'human');
   main.append(h('div', { class: 'card' }, h('h2', null, 'Gather your party'),
     h('p', null, 'A co-op fantasy adventure for one to four heroes. Each run is a freshly generated three-act quest: a villain, a motive, a twist, and a branching road to the lair. Human players share this screen and take turns; AI allies fill the other seats.'),
-    saved && saved.v === 2 ? h('p', null, h('button', { class: 'primary', onclick: () => { S = saved; render(); } }, `Continue: ${saved.q.title}`)) : null,
+    saved && saved.v === 3 ? h('p', null, h('button', { class: 'primary', onclick: () => { S = saved; render(); } }, `Continue: ${saved.q.title}`)) : null,
     h('h3', null, 'Seats'), rows,
+    h('p', null, 'Difficulty: ', h('select', { onchange: e => { diff = +e.target.value; } }, h('option', { value: 0, selected: !diff }, 'Standard'), h('option', { value: 1, selected: !!diff }, 'Veteran: tougher enemies that focus their attacks, less healing between fights'))),
     h('div', { class: 'grid3' }, [...new Set(used.map(s => s.cls))].map(c => h('div', { class: 'item small' }, h('b', null, CLASSES[c].n), ' ', CLASSES[c].blurb, h('div', { class: 'dim' }, 'At level 3: ', Object.values(CLASSES[c].subs).map(x => x.n).join(' or '), '.')))),
     h('p', { class: 'dim small' }, 'A full party of four with a Priest is the gentlest start. Smaller parties face fewer and weaker enemies; a lone hero gets one second wind per fight.'),
     h('p', null, h('button', { class: 'primary', disabled: !ok, onclick: begin }, 'Begin the adventure'), ok ? '' : ' At least one seat must be human.')));
 }
 function begin() { let p = 0; const list = seats.filter(s => s.ctrl !== 'none').map(s => ({ cls: s.cls, ctrl: s.ctrl, name: (s.name || '').trim() || CLASSES[s.cls].n, player: s.ctrl === 'human' ? 'Player ' + (++p) : '' }));
-  S = newRun((Date.now() ^ (Math.random() * 1e9)) | 0, list); sel = null; render(); }
+  S = newRun((Date.now() ^ (Math.random() * 1e9)) | 0, list, diff); sel = null; render(); }
 
 // ---------- party sidebar and hero sheet ----------
 function renderParty() {
@@ -53,6 +54,7 @@ function renderParty() {
       return h('div', { class: 'hero', onclick: () => sheet(i) }, h('div', { class: 'nm' }, h('span', null, h('b', null, x.name), ' ', h('span', { class: 'dim small' }, subName(x))), h('span', { class: 'small dim' }, who(x))),
         hpBar(hp, max), h('div', { class: 'small dim' }, `${hp}/${max} hp · ${x.row === 'F' ? 'front' : 'back'} row`, x.wounds ? ` · ${x.wounds} wound${x.wounds > 1 ? 's' : ''}` : '')); }),
     h('h3', null, 'Supplies'), S.bag.length ? S.bag.map(b => h('div', { class: 'small', title: CONS[b.id].d }, `${CONS[b.id].n} x${b.qty}`)) : h('div', { class: 'small dim' }, 'Nothing.'),
+    h('p', null, h('button', { onclick: openPack }, `Gear and pack (${S.stash.length})`)),
     h('p', { class: 'small dim' }, 'Click a hero for stats, gear and skills.')));
 }
 function sheet(i) {
@@ -60,7 +62,8 @@ function sheet(i) {
   const toggle = id => { const eq = x.eq.includes(id) ? x.eq.filter(k => k !== id) : [...x.eq, id]; if (eq.length <= 4) { setEq(S, i, eq); sheet(i); render(); } };
   modal(h('h2', null, `${x.name}, level ${x.level} ${subName(x)}`),
     h('p', { class: 'small' }, STATS.map(s => `${STAT_NAME[s]} ${u.st[s]}`).join(' · '), ` · ${u.arm} armour · ${u.ward} ward`),
-    h('h3', null, 'Gear'), [g.w, g.off, g.a, g.t1, g.t2].filter(Boolean).map(it => h('div', { class: 'small' }, h('b', null, it.n), ': ', itemDesc(it))),
+    h('h3', null, 'Gear'), [g.w, g.off, g.a, g.t1, g.t2].filter(Boolean).map(it => h('div', { class: 'small' }, h('b', { class: 'rn' + it.r }, it.n), ': ', itemDesc(it))),
+    activeSets(x).map(t => h('div', { class: 'small rn4' }, t)),
     free ? h('p', null, h('button', { onclick: () => { x.row = x.row === 'F' ? 'B' : 'F'; sheet(i); render(); } }, `Start fights in the ${x.row === 'F' ? 'back' : 'front'} row instead`)) : null,
     x.ctrl === 'ai' ? h('p', null, h('label', null, h('input', { type: 'checkbox', checked: !!x.manual, onchange: e => { x.manual = e.target.checked; render(); } }), ' Control this ally myself in combat')) : null,
     h('h3', null, `Skills (${x.eq.length}/4 equipped)`), free ? null : h('p', { class: 'small dim' }, 'Skills can be changed between fights.'),
@@ -181,10 +184,25 @@ function renderCombat(main) {
 // ---------- events ----------
 function giveButtons(it, onPick, extra) {
   if (it.k === 'cons') return h('div', { class: 'row' }, h('button', { class: 'primary', onclick: () => onPick(0) }, 'Take'), extra);
-  const list = S.party.map((x, i) => { if (!canUse(x, it)) return null; const old = x.gear[slotOf(x, it)]; return h('button', { onclick: () => onPick(i), title: old ? itemDesc(old) : '' }, `${x.name}`, h('span', { class: 'dim small' }, old ? ` (replaces ${old.n})` : ' (empty slot)')); }).filter(Boolean);
-  return h('div', { class: 'row' }, list.length ? list : h('span', { class: 'dim small' }, 'Nobody in the party can use this.'), extra);
+  const list = S.party.map((x, i) => { if (!canUse(x, it)) return null; const old = x.gear[slotOf(x, it)]; return h('button', { onclick: () => onPick(i), title: old ? itemDesc(old) : '' }, `${x.name}`, h('span', { class: 'dim small' }, old ? ` (swaps out ${old.n})` : ' (empty slot)')); }).filter(Boolean);
+  return h('div', { class: 'row' }, list.length ? list : h('span', { class: 'dim small' }, 'Nobody in the party can use this.'), h('button', { onclick: () => onPick(-1) }, 'Into the pack'), extra);
 }
-const itemCard = (it, foot) => h('div', { class: 'item' + (it.sold ? ' sold' : '') }, h('b', null, it.n + (it.k === 'cons' && it.qty > 1 ? ` x${it.qty}` : '')), h('div', { class: 'small' }, itemDesc(it)), foot);
+function setInfo(it) { if (!it.set) return null; const s = SETS[it.set], all = S.party.flatMap(x => Object.values(x.gear)).concat(S.stash).filter(g => g && g.set === it.set).length;
+  return h('div', { class: 'small rn4' }, `${s.n}: ${s.pieces.map(p => p.n).join(', ')}. The party holds ${all} of ${s.pieces.length}; one hero must wear them together. `, setLines(it.set).join('; ') + '.'); }
+function activeSets(x) { const out = []; for (const k of Object.keys(SETS)) { const n = setCount(x, k); if (n) out.push(`${SETS[k].n} (${n}/${SETS[k].pieces.length}): ` + (Object.entries(SETS[k].bonus).filter(([need]) => n >= +need).map(([, fx]) => fxText(fx)).join(', ') || 'no bonus yet')); } return out; }
+const itemCard = (it, foot) => h('div', { class: `item r${it.r || 0}` + (it.sold ? ' sold' : '') }, h('b', { class: 'rn' + (it.r || 0) }, it.n + (it.k === 'cons' && it.qty > 1 ? ` x${it.qty}` : '')), it.k === 'cons' ? null : h('span', { class: 'small dim' }, ` ${RAR[it.r]}`), h('div', { class: 'small' }, itemDesc(it)), setInfo(it), foot);
+// the shared pack: what everyone wears, and everything spare, grouped by kind
+function openPack() {
+  const free = packable(S), again = () => { openPack(); render(); }, groups = [['weapon', 'Weapons'], ['shield', 'Off-hand'], ['armor', 'Armour'], ['trinket', 'Trinkets']];
+  const out = [h('h2', null, 'Gear and pack'), h('p', { class: 'small dim' }, free ? 'Nothing is lost when gear is swapped: it comes back here, ready for someone else.' + (S.screen === 'shop' ? ' The merchant buys spare gear at half its value.' : ' Spare gear can be sold at a merchant.') : 'Gear cannot be changed during a fight.')];
+  S.party.forEach((x, i) => out.push(h('h3', null, `${x.name}, ${subName(x)}`), ['w', 'off', 'a', 't1', 't2'].map(sl => { const it = x.gear[sl]; return it ? h('div', { class: `item r${it.r}`, style: 'margin:3px 0;padding:4px 8px' }, h('b', { class: 'rn' + it.r }, it.n), h('span', { class: 'small' }, ' ' + itemDesc(it) + ' '), free && sl !== 'w' ? h('button', { class: 'small', onclick: () => { unequip(S, i, sl); again(); } }, 'Take off') : null) : null; }), activeSets(x).map(t => h('div', { class: 'small rn4' }, t))));
+  out.push(h('h2', { style: 'margin-top:14px' }, `In the pack (${S.stash.length})`));
+  if (!S.stash.length) out.push(h('p', { class: 'dim' }, 'Empty.'));
+  for (const [k, title] of groups) { const list = S.stash.map((it, si) => [it, si]).filter(e => e[0].k === k).sort((a, b) => b[0].r - a[0].r || b[0].tier - a[0].tier); if (!list.length) continue;
+    out.push(h('h3', null, title), list.map(([it, si]) => itemCard(it, free ? h('div', { class: 'row' }, S.party.map((x, i) => canUse(x, it) ? h('button', { onclick: () => { fromStash(S, si, i); again(); } }, x.name, h('span', { class: 'dim small' }, x.gear[slotOf(x, it)] ? ` (swaps out ${x.gear[slotOf(x, it)].n})` : ' (empty slot)')) : null), S.screen === 'shop' ? h('button', { onclick: () => { sellStash(S, si); again(); } }, `Sell (${it.price >> 1} gold)`) : null) : null))); }
+  out.push(h('p', null, h('button', { class: 'primary', onclick: closeModal }, 'Close')));
+  modal(out);
+}
 function renderEvent(main) {
   const e = EV[S.ev.id], r = S.ev.result, card = h('div', { class: 'card' }, h('h2', null, fill(S, e.t)), h('p', null, eventText(S, e)));
   if (!r) { if (humansIdx().length > 1) card.append(h('p', { class: 'dim' }, `${leader().player} (${leader().name}) decides.`));
@@ -195,7 +213,7 @@ function renderEvent(main) {
   } else {
     if (r.roll) card.append(h('p', null, h('span', { class: 'dice' }, String(r.roll.r)), `${S.party[r.roll.hi].name} rolls ${r.roll.r} + ${r.roll.stat} ${STAT_NAME[r.roll.s]} = ${r.roll.r + r.roll.stat} against ${r.roll.dc}: `, h('b', null, { ok: 'success', mid: 'partial success', bad: 'failure' }[r.roll.out]), '.'));
     card.append(h('p', null, r.text)); if (r.got.length) card.append(h('p', { class: 'dim' }, r.got.join(' · ') + '.'));
-    if (r.items.length) card.append(h('h3', null, 'You found'), itemCard(r.items[0], giveButtons(r.items[0], i => { eventGive(S, i); render(); }, h('button', { onclick: () => { eventGive(S, -1); render(); } }, `Sell it (${r.items[0].price >> 1} gold)`))));
+    if (r.items.length) card.append(h('h3', null, 'You found'), itemCard(r.items[0], giveButtons(r.items[0], i => { eventGive(S, i); render(); })));
     else card.append(h('p', null, h('button', { class: 'primary', onclick: () => { continueEvent(S); sel = null; render(); } }, r.fight ? 'To arms' : 'Continue')));
   }
   main.append(card);
@@ -203,14 +221,17 @@ function renderEvent(main) {
 
 // ---------- loot, shop, rest ----------
 function renderLoot(main) {
-  main.append(h('div', { class: 'card' }, h('h2', null, 'Spoils'), h('p', null, `The party gains ${S.loot.gold} gold and ${S.loot.xp} experience. Take one of these:`),
+  main.append(h('div', { class: 'card' }, h('h2', null, 'Spoils'), h('p', null, `The party gains ${S.loot.gold} gold and ${S.loot.xp} experience. Take one of these. Gear you swap out goes into the shared pack.`),
     h('div', { class: 'grid3' }, S.loot.items.map((it, k) => itemCard(it, giveButtons(it, i => { takeLoot(S, k, i); render(); })))),
     h('p', null, h('button', { onclick: () => { takeLoot(S, -1); render(); } }, 'Leave them and take 10 gold instead'))));
 }
 function renderShop(main) {
   const hurt = S.party.some(x => x.wounds || x.hp < maxHp(x));
-  main.append(h('div', { class: 'card' }, h('h2', null, 'A travelling merchant'), h('p', null, S.q.flags.helped ? 'Word of your good deeds has reached her: prices are a fifth lower.' : '"Coin first, then questions."', ` You have ${S.gold} gold. Replaced gear is sold back for half its value.`),
+  main.append(h('div', { class: 'card' }, h('h2', null, 'A travelling merchant'), h('p', null, S.q.flags.helped ? 'Word of your good deeds has reached her: prices are a fifth lower.' : '"Coin first, then questions."', ` You have ${S.gold} gold. `, h('button', { onclick: openPack }, `Sell spare gear from the pack (${S.stash.length})`)),
     h('div', { class: 'grid3' }, S.shop.items.map((it, k) => itemCard(it, it.sold ? h('div', { class: 'small dim' }, 'Sold') : h('div', null, h('div', { class: 'small' }, `${it.price} gold`), S.gold >= it.price ? giveButtons(it, i => { buy(S, k, i); render(); }) : h('div', { class: 'small dim' }, 'Too expensive'))))),
+    h('h3', null, 'The smith'), h('p', { class: 'small dim' }, 'Works on gear a hero is wearing. Improve raises quality a step (plain, Fine, Masterwork). Enchant adds a magical property, up to three, and raises rarity. Reforge rerolls the properties an item has. Set pieces can only be improved.'),
+    S.party.map((x, i) => h('div', { class: 'item', style: 'padding:6px 10px' }, h('b', null, x.name), ['w', 'off', 'a'].map(sl => { const it = x.gear[sl]; if (!it) return null; const ops = Object.keys(SMITH).map(op => [op, smithCost(it, op)]).filter(o => o[1]);
+      return h('div', { class: 'row small', style: 'margin-top:4px' }, h('span', { class: 'rn' + it.r, title: itemDesc(it), style: 'min-width:190px' }, it.n), ops.length ? ops.map(([op, c]) => h('button', { class: 'small', disabled: S.gold < c, onclick: () => { smith(S, i, sl, op); render(); } }, `${SMITH[op]} (${c})`)) : h('span', { class: 'dim' }, 'nothing more to do')); }))),
     h('p', { class: 'row' }, h('button', { disabled: !hurt || S.gold < S.shop.healCost, onclick: () => { buyHeal(S); render(); } }, `Healer: full health and one wound each (${S.shop.healCost} gold)`), h('button', { class: 'primary', onclick: () => { finishNode(S); render(); } }, 'Leave'))));
 }
 function renderRest(main) {
@@ -243,6 +264,7 @@ function rules() {
     h('p', null, h('b', null, 'Combos. '), 'Many skills apply a state, and other skills deal far more against a target in that state. Build the party so one hero sets up what another cashes in.'),
     DEBUFFS.concat(['Guard', 'Taunt', 'Blessed', 'Hidden']).map(s => h('div', { class: 'small' }, h('span', { class: 'chip ' + s + (DEBUFFS.includes(s) ? '' : ' good') }, s), ' ', STATE_INFO[s])),
     h('p', null, h('b', null, 'Going down. '), 'A hero at zero health is down and takes a wound (12% less maximum health) until healed at a camp or merchant. Allies can help them up mid-fight. If everyone is down, the adventure ends.'),
+    h('p', null, h('b', null, 'Gear. '), 'A border colour shows rarity: ', RAR.map((n, k) => h('b', { class: 'rn' + k }, n + ' ')), '. Weapons, armour and off-hand items gain a step for each magical property. Set pieces grant bonuses when one hero wears two or three from the same set. Swapped-out gear goes to the shared pack, where any hero who can use it may take it. Merchants also keep a smith who can improve, enchant and reforge what you wear.'),
     h('p', null, h('b', null, 'Checks. '), 'Outside combat the best-suited hero rolls a d20 plus the named stat. The odds are shown before you choose.'),
     h('p', null, h('button', { class: 'primary', onclick: closeModal }, 'Close')));
 }

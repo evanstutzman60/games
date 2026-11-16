@@ -4,7 +4,7 @@ const ri = (S, n) => Math.floor(rnd(S) * n), pick = (S, a) => a[ri(S, a.length)]
 function shuffle(S, a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = ri(S, i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const STATS = ['might', 'agility', 'mind', 'spirit'], STAT_NAME = { might: 'Might', agility: 'Agility', mind: 'Mind', spirit: 'Spirit' };
-const K = { hp: 1.25, atk: 0.8, heroHeal: 0.15 };   // global difficulty knobs, set by simulation
+const K = { hp: 1.35, atk: 0.8, heroHeal: 0.15, vetHp: 1.2, vetAtk: 1.2, vetHeal: 0.08 };   // global difficulty knobs, set by simulation
 
 const STATE_INFO = {
   Burning: 'Takes fire damage at the start of each of its turns.',
@@ -119,16 +119,16 @@ function skillDesc(sk) {
 
 // ---------- classes ----------
 const CLASSES = {
-  warrior: { n: 'Warrior', row: 'F', hp: 30, hpl: 8, st: [4, 2, 1, 2], grow: ['might', 'agility'], wp: ['sword', 'axe', 'mace', 'spear'], shield: true, armor: 3, base: ['bash', 'sunder', 'taunt', 'trip', 'cleave'], start: ['sword', 'shield', 'medium'],
+  warrior: { n: 'Warrior', row: 'F', hp: 30, hpl: 8, st: [4, 2, 1, 2], grow: ['might', 'agility'], wp: ['sword', 'axe', 'mace', 'spear', 'flail', 'warhammer', 'rapier', 'crossbow'], shield: true, armor: 3, base: ['bash', 'sunder', 'taunt', 'trip', 'cleave'], start: ['sword', 'shield', 'medium'],
     blurb: 'Holds the front row. Stuns, exposes and knocks enemies down for others to finish.',
     subs: { guardian: { n: 'Guardian', sk: ['bulwark', 'slam', 'laststand'], blurb: 'Shields the party and turns Exposed enemies into Stunned ones.' }, berserker: { n: 'Berserker', sk: ['reckless', 'execute', 'whirl'], blurb: 'Huge hits on Exposed, Stunned and Prone enemies, at the cost of safety.' } } },
-  rogue: { n: 'Rogue', row: 'F', hp: 22, hpl: 6, st: [2, 4, 2, 1], grow: ['agility', 'might'], wp: ['dagger', 'sword', 'bow'], shield: false, armor: 2, base: ['knife', 'backstab', 'smoke', 'hamstring', 'dirty'], start: ['dagger', null, 'light'],
+  rogue: { n: 'Rogue', row: 'F', hp: 22, hpl: 6, st: [2, 4, 2, 1], grow: ['agility', 'might'], wp: ['dagger', 'sword', 'bow', 'rapier', 'crossbow'], shield: false, armor: 2, base: ['knife', 'backstab', 'smoke', 'hamstring', 'dirty'], start: ['dagger', null, 'light'],
     blurb: 'Marks targets and punishes any enemy that is Marked, Stunned or Prone.',
     subs: { assassin: { n: 'Assassin', sk: ['ambush', 'garrote', 'deathmark'], blurb: 'Melee burst that cashes in every harmful state.' }, ranger: { n: 'Ranger', sk: ['aimed', 'volley', 'pinning'], blurb: 'Fights from the back row with a bow; marks whole rows and pins targets.' } } },
-  mage: { n: 'Mage', row: 'B', hp: 18, hpl: 5, st: [1, 2, 4, 2], grow: ['mind', 'spirit'], wp: ['staff', 'dagger'], shield: false, armor: 1, base: ['firebolt', 'frost', 'missile', 'gust', 'weaken'], start: ['staff', null, 'light'],
+  mage: { n: 'Mage', row: 'B', hp: 18, hpl: 5, st: [1, 2, 4, 2], grow: ['mind', 'spirit'], wp: ['staff', 'dagger', 'wand'], shield: false, armor: 1, base: ['firebolt', 'frost', 'missile', 'gust', 'weaken'], start: ['staff', null, 'light'],
     blurb: 'Spells ignore armour. Sets enemies Burning, Stunned, Prone or Exposed from the back row.',
     subs: { pyromancer: { n: 'Pyromancer', sk: ['detonate', 'flamewave', 'inferno'], blurb: 'Spreads Burning and detonates it.' }, stormcaller: { n: 'Stormcaller', sk: ['chain', 'thunder', 'tempest'], blurb: 'Stuns groups and chains lightning through Stunned and Prone rows.' } } },
-  priest: { n: 'Priest', row: 'B', hp: 22, hpl: 6, st: [2, 1, 2, 4], grow: ['spirit', 'might'], wp: ['mace', 'staff', 'spear'], shield: true, armor: 3, base: ['mend', 'smite', 'bless', 'rebuke', 'sanctuary'], start: ['mace', 'shield', 'light'],
+  priest: { n: 'Priest', row: 'B', hp: 22, hpl: 6, st: [2, 1, 2, 4], grow: ['spirit', 'might'], wp: ['mace', 'staff', 'spear', 'flail', 'warhammer', 'wand'], shield: true, armor: 3, base: ['mend', 'smite', 'bless', 'rebuke', 'sanctuary'], start: ['mace', 'shield', 'light'],
     blurb: 'Heals and blesses. Holy damage is strong against the undead.',
     subs: { lightbringer: { n: 'Lightbringer', sk: ['radiance', 'purify', 'sunburst'], blurb: 'Party-wide healing and a holy blast that punishes Marked and Exposed foes.' }, warpriest: { n: 'Warpriest', sk: ['crushing', 'judgement', 'holyfire'], blurb: 'Fights in the front row; exposes, stuns and heals through damage.' } } }
 };
@@ -141,7 +141,12 @@ const WT = {
   dagger: { n: 'Dagger', die: [4, 6, 8], fin: true, assassin: true, note: 'uses Agility; always crits Marked or Stunned targets, and crits deal double' },
   spear: { n: 'Spear', die: [7, 9, 11], two: true, reach: true, note: 'two-handed; melee skills work from the back row' },
   bow: { n: 'Bow', die: [7, 9, 11], two: true, ranged: true, fin: true, note: 'two-handed; basic attacks are ranged and use Agility' },
-  staff: { n: 'Staff', die: [4, 5, 6], sp: [8, 10, 12], two: true, note: 'two-handed; much stronger spells and heals' }
+  staff: { n: 'Staff', die: [4, 5, 6], sp: [8, 10, 12], two: true, note: 'two-handed; much stronger spells and heals' },
+  wand: { n: 'Wand', die: [4, 5, 6], sp: [6, 8, 10], hit: 1, note: 'one-handed; stronger spells and heals, +1 to hit' },
+  rapier: { n: 'Rapier', die: [6, 8, 10], fin: true, hit: 2, crit: 1, note: 'uses Agility; +2 to hit and crits on 19+' },
+  flail: { n: 'Flail', die: [7, 9, 11], proc: ['Prone', 0.3], note: 'melee hits have a 30% chance to knock the target Prone' },
+  warhammer: { n: 'Warhammer', die: [10, 12, 14], two: true, pierce: true, hit: -1, proc: ['Stunned', 0.15], note: 'two-handed; ignores armour, -1 to hit, melee hits have a 15% chance to Stun' },
+  crossbow: { n: 'Crossbow', die: [9, 11, 13], two: true, ranged: true, xbow: true, init: -3, note: 'two-handed; basic attacks are ranged and use Might or Agility, -3 initiative' }
 };
 const TIER = ['', 'Fine ', 'Masterwork '], PRICE = [20, 45, 90];
 const ARMOR = { light: { n: ['Robes', 'Warded Robes', 'Archmage Robes'], arm: [0, 1, 1], ward: [1, 2, 4], rank: 1 }, medium: { n: ['Leathers', 'Brigandine', 'Shadowmail'], arm: [1, 2, 3], ward: [0, 1, 1], rank: 2 }, heavy: { n: ['Chainmail', 'Half-plate', 'Full Plate'], arm: [2, 4, 5], ward: [0, 0, 1], rank: 3, slow: 1 } };
@@ -152,14 +157,27 @@ const TRINKETS = [
   ['Hawk Feather', { hit: 1 }, 1], ['Lucky Coin', { crit: 2 }, 2], ['Troll Tooth', { regen: 2 }, 2], ['Sentinel\'s Badge', { startGuard: 1 }, 2],
   ['Steady Stone', { immune: 'Stunned' }, 2], ['Salamander Scale', { immune: 'Burning' }, 1], ['Rootfoot Charm', { immune: 'Prone' }, 1],
   ['Lingering Censer', { dur: 1 }, 2], ['Hourglass Charm', { cdr: 1 }, 2], ['Thorn Bracers', { thorns: 3 }, 2], ['Leech Fang', { leech: 0.15 }, 2],
-  ['Quickening Spur', { init: 4 }, 1], ['Executioner\'s Token', { pay: 0.3 }, 2]
+  ['Quickening Spur', { init: 4 }, 1], ['Executioner\'s Token', { pay: 0.3 }, 2],
+  ['Whetstone Pendant', { dmg: 1 }, 1], ['Giant\'s Knuckle', { dmg: 3 }, 3], ['Warding Sigil', { immune: 'Marked' }, 1], ['Marching Drum', { init: 2, hp: 4 }, 1],
+  ['Bloodstone', { leech: 0.1, hp: 4 }, 2], ['Duelist\'s Glove', { hit: 1, crit: 1 }, 2], ['Ember Charm', { procs: [['Burning', 0.2]] }, 2], ['Tracker\'s Eye', { procs: [['Marked', 0.25]] }, 2],
+  ['Rending Hook', { procs: [['Exposed', 0.2]] }, 2], ['Pilgrim\'s Flask', { healm: 0.2 }, 2], ['Guardian Idol', { arm: 1, ward: 1 }, 2], ['Featherfall Cloak', { agility: 1, init: 2 }, 2],
+  ['Scholar\'s Lens', { mind: 1, hit: 1 }, 2], ['Bear Totem', { might: 1, hp: 6 }, 2], ['Prayer Beads', { spirit: 1, regen: 1 }, 2], ['Stormglass Vial', { procs: [['Stunned', 0.1]] }, 3],
+  ['Phoenix Feather', { phoenix: 1 }, 3], ['Veil of Shadows', { startHidden: 1 }, 3], ['Mirror Shard', { ward: 3, immune: 'Exposed' }, 3]
 ];
-const FX_TEXT = { might: v => `+${v} Might`, agility: v => `+${v} Agility`, mind: v => `+${v} Mind`, spirit: v => `+${v} Spirit`, hp: v => `+${v} health`, arm: v => `+${v} armour`, ward: v => `+${v} ward (reduces spell damage)`, hit: v => `+${v} to hit`,
+// off-hand items: shields for the armoured classes, tomes for casters, parrying daggers for the quick
+const OFF = { shield: { n: 'Shield', cls: ['warrior', 'priest'], def: [2, 3, 4], arm: [0, 1, 1], fx: [{}, {}, {}] }, tome: { n: 'Tome', cls: ['mage', 'priest'], def: [0, 0, 0], arm: [0, 0, 0], fx: [{ mind: 1 }, { mind: 1, spirit: 1 }, { mind: 2, spirit: 2 }] },
+  parry: { n: 'Parrying Dagger', cls: ['rogue', 'warrior'], def: [1, 2, 2], arm: [0, 0, 0], fx: [{}, { crit: 1 }, { crit: 1, hit: 1 }] } };
+const offOf = it => OFF[it.type || 'shield'];
+const FX_TEXT = { dmg: v => `+${v} damage on every hit`, phoenix: () => 'once per fight, survive a killing blow', procs: v => v.map(p => `hits have a ${pct(p[1])} chance to apply ${p[0]}`).join(', '), healm: v => `your heals are ${pct(v)} stronger`, startHidden: () => 'starts every fight Hidden', startTaunt: () => 'starts every fight with Taunt', might: v => `+${v} Might`, agility: v => `+${v} Agility`, mind: v => `+${v} Mind`, spirit: v => `+${v} Spirit`, hp: v => `+${v} health`, arm: v => `+${v} armour`, ward: v => `+${v} ward (reduces spell damage)`, hit: v => `+${v} to hit`,
   crit: v => `crits on a roll of ${20 - v}+`, regen: v => `regain ${v} health each turn`, startGuard: () => 'starts every fight with Guard', immune: v => `immune to ${v}`, dur: v => `states you apply last ${v} turn longer`,
   cdr: v => `cooldowns are ${v} turn shorter`, thorns: v => `melee attackers take ${v} damage`, leech: v => `heal for ${pct(v)} of damage dealt`, init: v => `+${v} initiative`, pay: v => `combo bonuses are +${v} stronger` };
 const CONS = {
   potion: { n: 'Healing Potion', tg: 'ally', flatHeal: 16, price: 12, d: 'Heals one ally for 16 (+4 per level).' },
   greater: { n: 'Greater Potion', tg: 'ally', flatHeal: 34, price: 26, d: 'Heals one ally for 34 (+4 per level).', tier: 2 },
+  fury: { n: 'Elixir of Fury', tg: 'ally', buff: [['Blessed', 3]], price: 12, d: 'One ally is Blessed for 3 turns.' },
+  stoneskin: { n: 'Stoneskin Draught', tg: 'ally', buff: [['Guard', 2]], price: 12, d: 'One ally has Guard for 2 turns.' },
+  thunderstone: { n: 'Thunderstone', tg: 'all', flat: 2, ap: [['Stunned', 1, 0.35]], price: 20, d: 'Damages all enemies with a 35% chance to Stun each.', tier: 2 },
+  tears: { n: 'Phoenix Tears', tg: 'downed', reviveP: 0.8, price: 30, d: 'Revives a downed ally at 80% health.', tier: 3 },
   salts: { n: 'Smelling Salts', tg: 'downed', reviveP: 0.4, price: 15, d: 'Revives a downed ally at 40% health.' },
   firebomb: { n: 'Firebomb', tg: 'row', flat: 5, ap: [['Burning', 3, 1]], price: 14, d: 'Damages an enemy row and sets it Burning.' },
   flash: { n: 'Flash Powder', tg: 'row', flat: 1, ap: [['Stunned', 1, 0.6]], price: 16, d: '60% chance to Stun each enemy in a row.' },
@@ -168,34 +186,73 @@ const CONS = {
   tonic: { n: 'Cleansing Tonic', tg: 'ally', flatHeal: 8, cleanse: true, price: 8, d: 'Removes harmful states from an ally and heals 8.' }
 };
 for (const k in CONS) CONS[k].id = k;
-function mkWeapon(type, tier) { const w = WT[type]; return { k: 'weapon', type, tier, n: TIER[tier - 1] + w.n, price: PRICE[tier - 1] }; }
-function mkShield(tier) { return { k: 'shield', tier, n: TIER[tier - 1] + 'Shield', price: PRICE[tier - 1] * 0.8 | 0 }; }
-function mkArmor(type, tier) { return { k: 'armor', type, tier, n: ARMOR[type].n[tier - 1], price: PRICE[tier - 1] }; }
-function mkTrinket(i) { const t = TRINKETS[i]; return { k: 'trinket', ti: i, n: t[0], fx: t[1], tier: t[2], price: 15 + 15 * t[2] }; }
-function mkCons(id, qty) { return { k: 'cons', id, n: CONS[id].n, qty: qty || 1, price: CONS[id].price * (qty || 1) }; }
-function itemDesc(it) {
-  if (it.k === 'weapon') { const w = WT[it.type]; return `d${w.die[it.tier - 1]} damage${w.bonus ? '+' + w.bonus : ''}${w.sp ? `, d${w.sp[it.tier - 1]} spell die` : ''}; ${w.note}.`; }
-  if (it.k === 'shield') return `Off-hand. +${it.tier + 1} defence, +${it.tier > 1 ? 1 : 0} armour. Not usable with two-handed weapons.`;
-  if (it.k === 'armor') { const a = ARMOR[it.type]; return `${it.type[0].toUpperCase() + it.type.slice(1)} armour: ${a.arm[it.tier - 1]} armour, ${a.ward[it.tier - 1]} ward${a.slow ? ', -1 Agility' : ''}.`; }
-  if (it.k === 'trinket') return Object.entries(it.fx).map(([k, v]) => FX_TEXT[k](v)).join(', ') + '.';
-  return CONS[it.id].d + (it.qty > 1 ? ` (x${it.qty})` : '');
+// rarity: gear gains one step per affix; trinkets by their tier; set pieces have their own
+const RAR = ['Common', 'Uncommon', 'Rare', 'Epic', 'Set'], PROC_T = { Burning: 3, Marked: 2, Exposed: 2, Prone: 1, Stunned: 1 };
+const AFFIX = {
+  flaming: { n: 'Flaming', on: 'w', pre: 1, fx: { procs: [['Burning', 0.25]] } }, hunters: { n: 'Hunter\'s', on: 'w', pre: 1, fx: { procs: [['Marked', 0.25]] } }, sundering: { n: 'Sundering', on: 'w', pre: 1, fx: { procs: [['Exposed', 0.2]] } },
+  keen: { n: 'Keen', on: 'w', pre: 1, fx: { crit: 1 } }, balanced: { n: 'Balanced', on: 'w', pre: 1, fx: { hit: 1 } }, vampiric: { n: 'Vampiric', on: 'w', pre: 1, fx: { leech: 0.1 } }, swift: { n: 'Swift', on: 'w', pre: 1, fx: { init: 3 } },
+  sturdy: { n: 'Sturdy', on: 'a', pre: 1, fx: { arm: 1 } }, warded: { n: 'Warded', on: 'a', pre: 1, fx: { ward: 2 } }, spiked: { n: 'Spiked', on: 'a', pre: 1, fx: { thorns: 2 } }, stalwart: { n: 'Stalwart', on: 'a', pre: 1, fx: { hp: 8 } }, mending: { n: 'Mending', on: 'a', pre: 1, fx: { regen: 1 } },
+  might: { n: 'Might', fx: { might: 1 } }, agility: { n: 'Agility', fx: { agility: 1 } }, mind: { n: 'Mind', fx: { mind: 1 } }, spirit: { n: 'Spirit', fx: { spirit: 1 } }, vigor: { n: 'Vigor', fx: { hp: 6 } }, duelist: { n: 'the Duelist', fx: { pay: 0.15 } }, lingering: { n: 'Lingering', fx: { dur: 1 } }
+};
+const SETS = {
+  dawn: { n: 'Bulwark of the Dawn', pieces: [{ k: 'shield', n: 'Dawnguard Shield' }, { k: 'armor', type: 'heavy', n: 'Dawnplate' }, { k: 'trinket', n: 'Dawnstar Medal', fx: { hp: 6 } }], bonus: { 2: { arm: 2 }, 3: { thorns: 4, startGuard: 1, startTaunt: 1 } } },
+  night: { n: 'Nightstalker\'s Kit', pieces: [{ k: 'weapon', type: 'dagger', n: 'Nightfang' }, { k: 'armor', type: 'medium', n: 'Nightstalker Leathers' }, { k: 'trinket', n: 'Shadow Clasp', fx: { agility: 1 } }], bonus: { 2: { crit: 1, init: 4 }, 3: { startHidden: 1, pay: 0.4 } } },
+  ember: { n: 'Emberweave', pieces: [{ k: 'weapon', type: 'staff', n: 'Emberbrand Staff' }, { k: 'armor', type: 'light', n: 'Emberweave Robes' }, { k: 'trinket', n: 'Cinder Heart', fx: { mind: 1 } }], bonus: { 2: { mind: 2 }, 3: { procs: [['Burning', 0.35]], dur: 1 } } },
+  mercy: { n: 'Vestments of Mercy', pieces: [{ k: 'shield', n: 'Aegis of Mercy' }, { k: 'armor', type: 'light', n: 'Vestments of Mercy' }, { k: 'trinket', n: 'Rosary of Mercy', fx: { spirit: 1 } }], bonus: { 2: { spirit: 2 }, 3: { healm: 0.3, regen: 3 } } },
+  signet: { n: 'The Twin Signets', pieces: [{ k: 'trinket', n: 'Sun Signet', fx: { might: 1 } }, { k: 'trinket', n: 'Moon Signet', fx: { mind: 1 } }], bonus: { 2: { hp: 10, hit: 1 } } }
+};
+function mergeFx(into, fx) { for (const [k, v] of Object.entries(fx || {})) { if (k === 'immune') (into.immune = into.immune || []).push(...[].concat(v)); else if (k === 'procs') into.procs = (into.procs || []).concat(v); else into[k] = (into[k] || 0) + v; } return into; }
+// fills in the derived fields (name, effects, rarity, price) after an item is made or changed
+function finish(it) {
+  if (it.k === 'cons') { it.r = 0; return it; }
+  const piece = it.set ? SETS[it.set].pieces[it.pi] : null, afx = it.afx || [];
+  if (it.k !== 'trinket' || piece) { it.fx = {}; if (piece) mergeFx(it.fx, piece.fx); if (it.k === 'shield') mergeFx(it.fx, offOf(it).fx[it.tier - 1]); for (const a of afx) mergeFx(it.fx, AFFIX[a].fx); }
+  const base = piece ? (it.k === 'trinket' ? '' : TIER[it.tier - 1]) + piece.n : it.k === 'weapon' ? TIER[it.tier - 1] + WT[it.type].n : it.k === 'shield' ? TIER[it.tier - 1] + offOf(it).n : it.k === 'armor' ? ARMOR[it.type].n[it.tier - 1] : it.n;
+  const pre = afx.filter(a => AFFIX[a].pre).map(a => AFFIX[a].n + ' ').join(''), suf = afx.filter(a => !AFFIX[a].pre).map(a => AFFIX[a].n);
+  it.n = pre + base + (suf.length ? ' of ' + suf.join(' and ') : '');
+  it.r = piece ? 4 : it.k === 'trinket' ? it.tier : afx.length;
+  it.price = Math.round((it.k === 'trinket' ? 15 + 15 * it.tier : PRICE[it.tier - 1] * (it.k === 'shield' ? 0.8 : 1)) * (piece ? 2 : 1 + 0.35 * afx.length)); return it;
 }
+function mkWeapon(type, tier) { return finish({ k: 'weapon', type, tier, afx: [] }); }
+function mkShield(tier, type) { return finish({ k: 'shield', type: type || 'shield', tier, afx: [] }); }
+function mkArmor(type, tier) { return finish({ k: 'armor', type, tier, afx: [] }); }
+function mkTrinket(i) { const t = TRINKETS[i]; return finish({ k: 'trinket', ti: i, n: t[0], fx: t[1], tier: t[2] }); }
+function mkCons(id, qty) { return finish({ k: 'cons', id, n: CONS[id].n, qty: qty || 1, price: CONS[id].price * (qty || 1) }); }
+function mkSet(set, pi, tier) { const p = SETS[set].pieces[pi]; return finish({ k: p.k, type: p.type, tier: p.k === 'trinket' ? 3 : tier, set, pi, ti: -1, afx: [] }); }
+function fxText(fx) { return Object.entries(fx || {}).map(([k, v]) => FX_TEXT[k] ? FX_TEXT[k](v) : '').filter(Boolean).join(', '); }
+function itemDesc(it) {
+  if (it.k === 'cons') return CONS[it.id].d + (it.qty > 1 ? ` (x${it.qty})` : '');
+  let d = '';
+  if (it.k === 'weapon') { const w = WT[it.type]; d = `d${w.die[it.tier - 1]} damage${w.bonus ? '+' + w.bonus : ''}${w.sp ? `, d${w.sp[it.tier - 1]} spell die` : ''}; ${w.note}.`; }
+  else if (it.k === 'shield') { const o = offOf(it), t = it.tier - 1; d = `Off-hand${o.def[t] ? `, +${o.def[t]} defence` : ''}${o.arm[t] ? `, +${o.arm[t]} armour` : ''}. Not usable with two-handed weapons.`; }
+  else if (it.k === 'armor') { const a = ARMOR[it.type]; d = `${it.type[0].toUpperCase() + it.type.slice(1)} armour: ${a.arm[it.tier - 1]} armour, ${a.ward[it.tier - 1]} ward${a.slow ? ', -1 Agility' : ''}.`; }
+  const f = fxText(it.fx); return (d + (f ? ' ' + f[0].toUpperCase() + f.slice(1) + '.' : '')).trim();
+}
+function setCount(h, set) { return Object.values(h.gear).filter(g => g && g.set === set).length; }
+function setLines(set) { const s = SETS[set]; return Object.entries(s.bonus).map(([n, fx]) => `${n} pieces: ${fxText(fx)}`); }
 function canUse(h, it) { const c = CLASSES[h.cls];
   if (it.k === 'weapon') return c.wp.includes(it.type) || (it.type === 'bow' && h.sub === 'ranger');
-  if (it.k === 'shield') return c.shield; if (it.k === 'armor') return ARMOR[it.type].rank <= c.armor; return true; }
-function itemScore(it) { if (!it) return 0; if (it.k === 'trinket') return it.tier; return it.tier; }
+  if (it.k === 'shield') return offOf(it).cls.includes(h.cls); if (it.k === 'armor') return ARMOR[it.type].rank <= c.armor; return true; }
+function itemScore(it) { if (!it) return 0; return it.tier + (it.set ? 1.2 : it.k === 'trinket' ? 0 : 0.4 * (it.afx || []).length); }
 // what equipping would replace; returns the old item (or null)
 function slotOf(h, it) { return it.k === 'weapon' ? 'w' : it.k === 'shield' ? 'off' : it.k === 'armor' ? 'a' : (!h.gear.t1 ? 't1' : !h.gear.t2 ? 't2' : 't1'); }
+// Equipping never destroys anything: whatever comes off goes into the shared pack.
 function equip(S, h, it) {
-  const slot = slotOf(h, it), old = h.gear[slot]; let refund = old ? old.price >> 1 : 0;
+  const slot = slotOf(h, it), old = h.gear[slot], m0 = maxHp(h);
   if (slot === 't1' && old && h.gear.t2) { h.gear.t1 = h.gear.t2; h.gear.t2 = it; } else h.gear[slot] = it;
-  if (it.k === 'weapon' && WT[it.type].two && h.gear.off) { refund += h.gear.off.price >> 1; h.gear.off = null; }
-  if (it.k === 'shield' && h.gear.w && WT[h.gear.w.type].two) { refund += h.gear.w.price >> 1; h.gear.w = mkWeapon(h.cls === 'priest' ? 'mace' : 'sword', 1); }
-  S.gold += refund; const before = maxHp(h); h.hp = Math.min(maxHp(h), h.hp + Math.max(0, maxHp(h) - before)); return refund;
+  if (old) S.stash.push(old);
+  if (it.k === 'weapon' && WT[it.type].two && h.gear.off) { S.stash.push(h.gear.off); h.gear.off = null; }
+  if (it.k === 'shield' && h.gear.w && WT[h.gear.w.type].two) { S.stash.push(h.gear.w); const si = S.stash.findIndex(x => x.k === 'weapon' && !WT[x.type].two && canUse(h, x)); h.gear.w = si >= 0 ? S.stash.splice(si, 1)[0] : mkWeapon({ warrior: 'sword', rogue: 'dagger', mage: 'wand', priest: 'mace' }[h.cls], 1); }
+  h.hp = clamp(h.hp + Math.max(0, maxHp(h) - m0), 1, maxHp(h));
 }
+const packable = S => S.screen !== 'combat' && S.screen !== 'end';
+function fromStash(S, si, hi) { const it = S.stash[si], h = S.party[hi]; if (!packable(S) || !it || !h || !canUse(h, it)) return false; S.stash.splice(si, 1); equip(S, h, it); return true; }
+function unequip(S, hi, slot) { const h = S.party[hi]; if (!packable(S) || !h || slot === 'w' || !h.gear[slot]) return false; S.stash.push(h.gear[slot]); h.gear[slot] = null; if (slot === 't1' && h.gear.t2) { h.gear.t1 = h.gear.t2; h.gear.t2 = null; } h.hp = clamp(h.hp, 1, maxHp(h)); return true; }
+function sellStash(S, si) { const it = S.stash[si]; if (!it || S.screen !== 'shop') return false; S.gold += it.price >> 1; S.stash.splice(si, 1); return true; }
 
 // ---------- heroes ----------
-function heroFx(h) { const fx = {}; for (const s of ['t1', 't2']) { const t = h.gear[s]; if (!t) continue; for (const [k, v] of Object.entries(t.fx)) { if (k === 'immune') (fx.immune = fx.immune || []).push(v); else fx[k] = (fx[k] || 0) + v; } } return fx; }
+function heroFx(h) { const fx = {}, sets = {}; for (const g of Object.values(h.gear)) { if (!g) continue; mergeFx(fx, g.fx); if (g.set) sets[g.set] = (sets[g.set] || 0) + 1; }
+  for (const [k, n] of Object.entries(sets)) for (const [need, b] of Object.entries(SETS[k].bonus)) if (n >= +need) mergeFx(fx, b); return fx; }
 function heroStat(h, s) { const c = CLASSES[h.cls], L = h.level - 1, fx = heroFx(h);
   return c.st[STATS.indexOf(s)] + (c.grow[0] === s ? L : c.grow[1] === s ? L >> 1 : 0) + (fx[s] || 0) - (s === 'agility' && h.gear.a && ARMOR[h.gear.a.type].slow ? 1 : 0); }
 function maxHp(h) { const c = CLASSES[h.cls]; return Math.max(1, Math.round((c.hp + c.hpl * (h.level - 1) + (heroFx(h).hp || 0)) * (1 - 0.12 * h.wounds))); }
@@ -207,9 +264,10 @@ function newHero(seat, i) { const c = CLASSES[seat.cls];
   h.hp = maxHp(h); h.eq = known(h).slice(0, 4); return h; }
 function heroUnit(h, i) {
   const fx = heroFx(h), g = h.gear, w = WT[g.w.type], t = g.w.tier - 1, st = {}; for (const s of STATS) st[s] = heroStat(h, s);
+  if (w.crit) fx.crit = (fx.crit || 0) + w.crit; if (w.init) fx.init = (fx.init || 0) + w.init; if (w.proc) fx.procs = (fx.procs || []).concat([[w.proc[0], w.proc[1], 'melee']]);
   return { id: 'h' + i, side: 'H', hi: i, name: h.name, row: h.row, hp: h.hp, max: maxHp(h), st, lvl: h.level, fx,
-    arm: (g.a ? ARMOR[g.a.type].arm[g.a.tier - 1] : 0) + (g.off && g.off.tier > 1 ? 1 : 0) + (fx.arm || 0), ward: (g.a ? ARMOR[g.a.type].ward[g.a.tier - 1] : 0) + (fx.ward || 0), defb: g.off ? g.off.tier + 1 : 0,
-    w: { die: w.die[t], sp: w.sp ? w.sp[t] : 4 + t, hit: w.hit || 0, bonus: w.bonus || 0, pierce: w.pierce, fin: w.fin, assassin: w.assassin, reach: w.reach, ranged: w.ranged, splash: w.splash },
+    arm: (g.a ? ARMOR[g.a.type].arm[g.a.tier - 1] : 0) + (g.off ? offOf(g.off).arm[g.off.tier - 1] : 0) + (fx.arm || 0), ward: (g.a ? ARMOR[g.a.type].ward[g.a.tier - 1] : 0) + (fx.ward || 0), defb: g.off ? offOf(g.off).def[g.off.tier - 1] : 0,
+    w: { die: w.die[t], sp: w.sp ? w.sp[t] : 4 + t, hit: w.hit || 0, bonus: w.bonus || 0, pierce: w.pierce, fin: w.fin, assassin: w.assassin, reach: w.reach, ranged: w.ranged, splash: w.splash, xbow: w.xbow },
     skills: h.eq.slice(), states: {}, cds: {}, used: {}, down: h.hp <= 0 };
 }
 
@@ -247,7 +305,7 @@ const EN = {
 };
 function enemyUnit(S, key, lv, k, n) {
   const e = EN[key], big = e.elite || e.boss, small = n === 1 ? 0.62 : n === 2 ? 0.88 : 1, size = (big ? 0.4 + 0.15 * n : 1) * small, atk = e.atk + 1.3 * (lv - 1) + K.atk - (n === 1 ? 1.5 : 0), agi = Math.round(e.agi + 0.6 * (lv - 1));
-  const hp = Math.max(1, Math.round(e.hp * (1 + 0.4 * (lv - 1)) * size * K.hp)), a = Math.round(atk);
+  const vet = S.diff ? 1 : 0, hp = Math.max(1, Math.round(e.hp * (1 + 0.4 * (lv - 1)) * size * K.hp * (vet ? K.vetHp : 1))), a = Math.round(atk + vet * K.vetAtk);
   return { id: 'e' + k, side: 'E', key, name: e.n, fam: e.fam, row: e.row, hp, max: hp, st: { might: a, agility: agi, mind: a, spirit: a }, lvl: Math.round(lv), fx: {},
     arm: e.arm + Math.floor((lv - 1) / 2), ward: e.ward + Math.floor((lv - 1) / 2), defb: 0, w: { die: e.die + Math.floor(lv - 1), sp: e.die + Math.floor(lv - 1), hit: 0, bonus: 0 },
     skills: e.sk.slice(), states: {}, cds: {}, used: {}, elite: e.elite, boss: e.boss, ether: e.ether };
@@ -265,7 +323,7 @@ function addState(C, t, s, turns, src) {
   if ((t.fx.immune || []).includes(s) || (s === 'Stunned' && has(t, 'Steady'))) { say(C, `${t.name} shrugs off ${s}.`); return false; }
   t.states[s] = { t: turns + (src && src !== t && DEBUFFS.includes(s) ? src.fx.dur || 0 : 0), pow: 2 + (src ? src.lvl : 1), fresh: C.cur === t.id }; return true;
 }
-const atkStat = (u, sk) => sk.holy ? u.st.spirit : sk.ty === 'spell' ? u.st.mind : u.side === 'H' && (u.w.fin && sk.ty !== 'spell') ? Math.max(u.st.agility, sk.ty === 'ranged' ? 0 : u.st.might) : sk.ty === 'ranged' ? u.st.agility : u.st.might;
+const atkStat = (u, sk) => sk.holy ? u.st.spirit : sk.ty === 'spell' ? u.st.mind : u.side === 'H' && (u.w.fin && sk.ty !== 'spell') ? Math.max(u.st.agility, sk.ty === 'ranged' ? 0 : u.st.might) : sk.ty === 'ranged' ? (u.w.xbow ? Math.max(u.st.might, u.st.agility) : u.st.agility) : u.st.might;
 function skillType(u, sk) { return sk.id === 'attack' && u.w.ranged ? 'ranged' : sk.ty; }
 function hitNeed(att, sk, t) {
   if (sk.sure || sk.flat !== undefined) return 2;
@@ -275,7 +333,7 @@ function hitNeed(att, sk, t) {
 // damage for a given die roll; pure, so the AI can use it with the average roll
 function damage(att, sk, t, roll, crit) {
   const ty = skillType(att, sk), phys = ty !== 'spell';
-  let base = sk.flat !== undefined ? sk.flat + 2 * att.lvl : roll + att.w.bonus + atkStat(att, { ...sk, ty });
+  let base = sk.flat !== undefined ? sk.flat + 2 * att.lvl : roll + att.w.bonus + (att.fx.dmg || 0) + atkStat(att, { ...sk, ty });
   let m = sk.flat !== undefined ? 1 : sk.m;
   const payoff = sk.pay && sk.pay.s.some(s => has(t, s)); if (payoff) m *= sk.pay.m + (att.fx.pay || 0);
   if (has(t, 'Marked')) m *= t.fam === 'bandit' ? 1.5 : 1.25;
@@ -315,6 +373,7 @@ function hurt(S, C, t, d, src) {
   t.hp -= d;
   if (t.hp <= 0) { t.hp = 0; t.states = {};
     if (t.side === 'H' && C.n === 1 && !C.grit) { C.grit = true; t.hp = Math.round(t.max * 0.3); say(C, `${t.name} staggers, grits their teeth and fights on. (A lone hero gets one second wind per fight.)`); }
+    else if (t.side === 'H' && t.fx.phoenix && !t.used.phoenix) { t.used.phoenix = true; t.hp = Math.round(t.max * 0.25); say(C, `${t.name}'s Phoenix Feather burns away, and ${t.name} fights on.`); }
     else if (t.side === 'H') { t.down = true; const h = S.party[t.hi]; if (h.wounds < 4) h.wounds++; say(C, `${t.name} is down!`); S.stats.downs++; }
     else { say(C, `${t.name} is destroyed.`); S.stats.kills++; } }
 }
@@ -329,7 +388,8 @@ function strike(S, C, att, sk, t, forceCrit, scale) {
   if (payoff && sk.pay.consume) for (const s of sk.pay.s) delete t.states[s];
   hurt(S, C, t, d, att);
   if (up(t)) { for (const [s, turns, ch] of sk.ap || []) if (rnd(S) < ch && addState(C, t, s, turns, att)) say(C, `${t.name} is ${s}.`);
-    if (payoff && sk.pay.ap && addState(C, t, sk.pay.ap[0], sk.pay.ap[1], att)) say(C, `${t.name} is ${sk.pay.ap[0]}.`); }
+    if (payoff && sk.pay.ap && addState(C, t, sk.pay.ap[0], sk.pay.ap[1], att)) say(C, `${t.name} is ${sk.pay.ap[0]}.`);
+    if (sk.flat === undefined) for (const [ps, ch, only] of att.fx.procs || []) if ((!only || ty === only) && !has(t, ps) && rnd(S) < ch && addState(C, t, ps, PROC_T[ps], att)) say(C, `${att.name}'s gear leaves ${t.name} ${ps}.`); }
   if (t.fx.thorns && ty === 'melee' && up(att)) { say(C, `${att.name} takes ${t.fx.thorns} from thorns.`); hurt(S, C, att, t.fx.thorns); }
   return d;
 }
@@ -340,7 +400,7 @@ function useSkill(S, C, att, sk, tspec) {
     if (sk.id === 'attack' && att.w.splash && ts[0]) { const o = frontOf(C, other(att.side)).find(u => u !== ts[0] && u.row === ts[0].row); if (o) total += strike(S, C, att, sk, o, false, 0.5); }
     const leech = (sk.leech || 0); if (total && up(att)) { if (leech && sk.holy && att.side === 'H') { for (const m of living(C, 'H')) heal(C, m, total * leech / 2); say(C, `The party is healed by ${sk.n}.`); } else if (leech) heal(C, att, total * leech); if (att.fx.leech) heal(C, att, total * att.fx.leech); }
   }
-  if (sk.heal || sk.flatHeal || sk.healP) for (const t of ts) { if (!up(t)) continue; const v = sk.healP ? t.max * sk.healP : sk.flatHeal ? sk.flatHeal + 4 * att.lvl : (die(S, att.w.sp) + att.st.spirit * 1.5) * sk.heal * (has(att, 'Blessed') ? 1.2 : 1);
+  if (sk.heal || sk.flatHeal || sk.healP) for (const t of ts) { if (!up(t)) continue; const v = sk.healP ? t.max * sk.healP : sk.flatHeal ? sk.flatHeal + 4 * att.lvl : (die(S, att.w.sp) + att.st.spirit * 1.5) * sk.heal * (has(att, 'Blessed') ? 1.2 : 1) * (1 + (att.fx.healm || 0));
     const a = heal(C, t, v); say(C, `${att.name} uses ${sk.n}: ${t.name} regains ${a}.`); C.fx.push({ id: t.id, h: a }); }
   if (sk.cleanse) for (const t of ts) for (const s of DEBUFFS) delete t.states[s];
   if (sk.buff) { for (const t of ts) for (const [s, turns] of sk.buff) addState(C, t, s, turns, att); if (!sk.heal && !sk.healP) say(C, `${att.name} uses ${sk.n}.`); }
@@ -419,7 +479,7 @@ function aiEnemy(S, C, u) {
   const opts = []; const mates = living(C, 'E');
   for (const id of u.skills) { if (!usable(C, u, id)) continue; const sk = SK[id];
     if (sk.heal && !mates.some(m => m.hp / m.max < 0.6)) continue;
-    for (const t of targetsFor(C, u, sk)) { let s = scoreSkill(C, u, sk, t, mates); if (sk.tg === 'ally') { const m = unit(C, t); s = m.hp / m.max < 0.6 ? (m.max - m.hp) * 0.8 : 0; } if (s > 0) opts.push([{ k: 'skill', id, t }, s * (0.6 + 0.8 * rnd(S))]); } }
+    for (const t of targetsFor(C, u, sk)) { let s = scoreSkill(C, u, sk, t, mates); if (sk.tg === 'ally') { const m = unit(C, t); s = m.hp / m.max < 0.6 ? (m.max - m.hp) * 0.8 : 0; } if (s > 0) opts.push([{ k: 'skill', id, t }, s * (S.diff ? 0.9 + 0.2 * rnd(S) : 0.6 + 0.8 * rnd(S))]); } }
   if (!opts.length) return u.row === 'B' || targetsFor(C, u, SK.e_hit).length ? { k: 'defend' } : { k: 'move' };
   opts.sort((a, b) => b[1] - a[1]); return opts[0][0];
 }
@@ -429,7 +489,7 @@ function startCombat(S, enc) {
   for (const key of enc.list) { const u = enemyUnit(S, key, enc.lv + (EN[key].elite || EN[key].boss ? 0.5 : 0), C.nextId++, n); if (rows[u.row] >= 3) u.row = u.row === 'F' ? 'B' : 'F'; rows[u.row]++; C.units.push(u); }
   if (!C.units.some(u => u.side === 'E' && u.row === 'F')) C.units.find(u => u.side === 'E' && !u.boss || true).row = 'F';
   const dup = {}; for (const u of C.units) if (u.side === 'E') dup[u.name] = (dup[u.name] || 0) + 1; const seen = {}; for (const u of C.units) if (u.side === 'E' && dup[u.name] > 1) { seen[u.name] = (seen[u.name] || 0) + 1; u.name += ' ' + 'ABCDEF'[seen[u.name] - 1]; }
-  for (const u of C.units) if (u.side === 'H' && u.fx.startGuard && up(u)) u.states.Guard = { t: 1, fresh: true };
+  for (const u of C.units) if (u.side === 'H' && up(u)) { if (u.fx.startGuard) u.states.Guard = { t: 1, fresh: true }; if (u.fx.startTaunt) u.states.Taunt = { t: 2, fresh: true }; if (u.fx.startHidden) u.states.Hidden = { t: 2, fresh: true }; }
   const mod = S.nextMod; S.nextMod = null;
   if (mod === 'ambush') { C.first = 'H'; for (const u of living(C, 'E')) { u.hp = Math.round(u.hp * 0.85); u.states.Exposed = { t: 2 }; } say(C, 'You catch them off guard: the enemy starts hurt and Exposed, and you act first.'); }
   if (mod === 'surprised') { C.first = 'E'; say(C, 'You are caught off guard: the enemy acts first.'); }
@@ -441,31 +501,56 @@ function startCombat(S, enc) {
 function endCombat(S) {
   const C = S.C; for (const u of C.units) if (u.side === 'H') { const h = S.party[u.hi]; h.row = u.row; h.hp = u.down ? 0 : u.hp; }
   if (C.over === 'lose') { S.screen = 'end'; S.result = 'defeat'; S.C = null; return; }
-  for (const h of S.party) { const m = maxHp(h); h.hp = h.hp <= 0 ? Math.round(m * 0.25) : Math.min(m, h.hp + Math.round(m * K.heroHeal)); }
+  for (const h of S.party) { const m = maxHp(h); h.hp = h.hp <= 0 ? Math.round(m * 0.25) : Math.min(m, h.hp + Math.round(m * (S.diff ? K.vetHeal : K.heroHeal))); }
   const node = S.map[S.pos], big = C.boss ? 3 : C.elite ? 1.8 : 1; S.C = null;
   if (C.boss) { S.screen = 'end'; S.result = 'victory'; S.gold += 100; return; }
   const gold = Math.round((10 + 6 * node.act + ri(S, 8)) * big); S.gold += gold; S.xp += Math.round(10 * big);
   S.loot = { gold, xp: Math.round(10 * big), items: rollLoot(S, node.act + (C.elite ? 1 : 0)) }; S.screen = 'loot';
+  if (node.lt) { const sp = rollSet(S, node.act + 1); if (sp) S.loot.items[0] = sp; }
 }
 
 // ---------- loot, shops, rest ----------
-function rollGear(S, tier, kind) {
-  tier = clamp(tier, 1, 3);
+function rollAffixes(S, it, n) {
+  const on = it.k === 'weapon' ? 'w' : 'a', pres = Object.keys(AFFIX).filter(a => AFFIX[a].pre && AFFIX[a].on === on), sufs = Object.keys(AFFIX).filter(a => !AFFIX[a].pre), out = [];
+  if (n >= 3 || (n === 2 && rnd(S) < 0.7) || (n === 1 && rnd(S) < 0.5)) out.push(pick(S, pres));
+  while (out.length < n) { const a = pick(S, sufs); if (!out.includes(a)) out.push(a); } it.afx = out; return finish(it);
+}
+const RAR_W = [[0, 0, 0, 0], [55, 33, 11, 1], [35, 38, 22, 5], [20, 35, 32, 13], [12, 30, 36, 22]];
+function rollRarity(S, lvl) { const w = RAR_W[clamp(lvl, 1, 4)]; let r = rnd(S) * 100; for (let k = 0; k < 4; k++) { r -= w[k]; if (r < 0) return k; } return 0; }
+function rollSet(S, tier) {
+  const owned = {}; for (const g of S.party.flatMap(h => Object.values(h.gear)).concat(S.stash)) if (g && g.set) (owned[g.set] = owned[g.set] || new Set()).add(g.pi);
+  const opts = []; for (const k of Object.keys(SETS)) SETS[k].pieces.forEach((p, pi) => { if (owned[k] && owned[k].has(pi)) return; const it = mkSet(k, pi, clamp(tier, 2, 3)); if (S.party.some(h => canUse(h, it))) opts.push([it, owned[k] ? 14 : 1]); });
+  if (!opts.length) return null; let r = rnd(S) * opts.reduce((a, o) => a + o[1], 0); for (const o of opts) { r -= o[1]; if (r < 0) return o[0]; } return opts[0][0];
+}
+// lvl: act of the stop, +1 for elites; it sets base quality, rarity odds and the chance of a set piece
+function rollGear(S, lvl, kind) {
+  const tier = clamp(lvl, 1, 3);
+  if (!kind && rnd(S) < [0, 0.05, 0.11, 0.16, 0.26][clamp(lvl, 1, 4)]) { const it = rollSet(S, tier); if (it) return it; }
   for (let tries = 0; tries < 30; tries++) { const r = kind || pick(S, ['weapon', 'weapon', 'armor', 'shield']); let it;
-    if (r === 'weapon') it = mkWeapon(pick(S, Object.keys(WT)), tier); else if (r === 'armor') it = mkArmor(pick(S, Object.keys(ARMOR)), tier); else it = mkShield(tier);
-    if (S.party.some(h => canUse(h, it) && itemScore(h.gear[slotOf(h, it)]) <= it.tier && !(h.gear[slotOf(h, it)] && h.gear[slotOf(h, it)].n === it.n))) return it; }
+    if (r === 'weapon') it = mkWeapon(pick(S, Object.keys(WT)), tier); else if (r === 'armor') it = mkArmor(pick(S, Object.keys(ARMOR)), tier); else it = mkShield(tier, pick(S, Object.keys(OFF)));
+    rollAffixes(S, it, rollRarity(S, lvl));
+    if (S.party.some(h => canUse(h, it) && itemScore(h.gear[slotOf(h, it)]) <= itemScore(it) && !(h.gear[slotOf(h, it)] && h.gear[slotOf(h, it)].n === it.n))) return it; }
   return rollTrinket(S, tier);
 }
-function rollTrinket(S, tier) { const have = new Set(); for (const h of S.party) for (const s of ['t1', 't2']) if (h.gear[s]) have.add(h.gear[s].ti);
-  const pool = TRINKETS.map((t, i) => i).filter(i => TRINKETS[i][2] <= tier && !have.has(i)); return mkTrinket(pool.length ? pick(S, pool) : ri(S, TRINKETS.length)); }
-function rollCons(S, tier, qty) { const pool = Object.keys(CONS).filter(k => (CONS[k].tier || 1) <= tier); return mkCons(pick(S, pool), qty); }
-function rollLoot(S, tier) { const up1 = () => clamp(tier + (rnd(S) < 0.2 ? 1 : 0), 1, 3); return [rollGear(S, up1()), rnd(S) < 0.6 ? rollTrinket(S, up1()) : rollGear(S, up1()), rollCons(S, tier, 2)]; }
+function rollTrinket(S, tier) { const have = new Set(S.stash.filter(x => x.k === 'trinket').map(x => x.ti)); for (const h of S.party) for (const s of ['t1', 't2']) if (h.gear[s]) have.add(h.gear[s].ti);
+  tier = clamp(tier, 1, 3); const pool = TRINKETS.map((t, i) => i).filter(i => TRINKETS[i][2] <= tier && !have.has(i)); return mkTrinket(pool.length ? pick(S, pool) : ri(S, TRINKETS.length)); }
+function rollCons(S, tier, qty) { tier = clamp(tier, 1, 3); const pool = Object.keys(CONS).filter(k => (CONS[k].tier || 1) <= tier); return mkCons(pick(S, pool), qty); }
+function rollLoot(S, lvl) { const up1 = () => lvl + (rnd(S) < 0.2 ? 1 : 0); return [rollGear(S, up1()), rnd(S) < 0.6 ? rollTrinket(S, up1()) : rollGear(S, up1()), rollCons(S, lvl, 2)]; }
 function addBag(S, it) { const b = S.bag.find(x => x.id === it.id); if (b) b.qty += it.qty; else S.bag.push({ id: it.id, qty: it.qty }); }
-function give(S, it, hi) { if (it.k === 'cons') { addBag(S, it); return true; } const h = S.party[hi]; if (!h || !canUse(h, it)) return false; equip(S, h, it); return true; }
-function takeLoot(S, k, hi) { if (k < 0) S.gold += 10; else if (!give(S, S.loot.items[k], hi)) return false; S.loot = null; finishNode(S); return true; }
-function openShop(S) { const t = S.map[S.pos].act, items = [rollGear(S, t), rollGear(S, t), rollGear(S, clamp(t + 1, 1, 3)), rollTrinket(S, t), rollTrinket(S, clamp(t + 1, 1, 3)), mkCons('potion', 1), mkCons('salts', 1), rollCons(S, t, 1)];
+function give(S, it, hi) { if (it.k === 'cons') { addBag(S, it); return true; } if (hi < 0) { S.stash.push(it); return true; } const h = S.party[hi]; if (!h || !canUse(h, it)) return false; equip(S, h, it); return true; }
+function takeLoot(S, k, hi) { if (k < 0) S.gold += 10; else if (!give(S, S.loot.items[k], hi === undefined ? -1 : hi)) return false; S.loot = null; finishNode(S); return true; }
+function openShop(S) { const t = S.map[S.pos].act, items = [rollGear(S, t), rollGear(S, t), rollGear(S, t + 1), rollTrinket(S, t), rollTrinket(S, t + 1), mkCons('potion', 1), mkCons('salts', 1), rollCons(S, t, 1)];
   const disc = S.q.flags.helped ? 0.8 : 1; for (const it of items) it.price = Math.round(it.price * (0.8 + 0.2 * t) * disc); S.shop = { items, healCost: 10 + 5 * t }; S.screen = 'shop'; }
-function buy(S, k, hi) { const it = S.shop.items[k]; if (!it || it.sold || S.gold < it.price) return false; if (it.k !== 'cons' && !(S.party[hi] && canUse(S.party[hi], it))) return false; S.gold -= it.price; give(S, it, hi); it.sold = true; return true; }
+function buy(S, k, hi) { const it = S.shop.items[k]; if (!it || it.sold || S.gold < it.price) return false; if (it.k !== 'cons' && hi >= 0 && !(S.party[hi] && canUse(S.party[hi], it))) return false; S.gold -= it.price; give(S, it, hi); it.sold = true; return true; }
+// the smith works on equipped gear: raise its quality, add an enchantment, or reroll the ones it has
+const SMITH = { upgrade: 'Improve', enchant: 'Enchant', reforge: 'Reforge' };
+function smithCost(it, op) { if (!it || it.k === 'cons') return 0;
+  if (op === 'upgrade') return it.k !== 'trinket' && it.tier < 3 ? [30, 60][it.tier - 1] : 0;
+  if (it.set || it.k === 'trinket') return 0; const n = (it.afx || []).length; return op === 'enchant' ? (n < 3 ? [30, 50, 75][n] : 0) : n ? 20 : 0; }
+function smith(S, hi, slot, op) { const h = S.party[hi], it = h && h.gear[slot], cost = smithCost(it, op); if (!cost || S.gold < cost || !S.shop) return false; S.gold -= cost;
+  const m0 = maxHp(h); if (op === 'upgrade') { it.tier++; finish(it); } else if (op === 'enchant') { const want = it.afx.length + 1, keep = it.afx.slice(); for (let k = 0; k < 40; k++) { rollAffixes(S, it, want); if (keep.every(a => it.afx.includes(a))) break; it.afx = keep; } if (it.afx.length < want) { rollAffixes(S, it, want); } }
+  else { const old = it.afx.join(); for (let k = 0; k < 10; k++) { rollAffixes(S, it, it.afx.length); if (it.afx.join() !== old) break; } }
+  h.hp = clamp(h.hp + Math.max(0, maxHp(h) - m0), 1, maxHp(h)); S.stats.smith = (S.stats.smith || 0) + 1; return true; }
 function buyHeal(S) { if (S.gold < S.shop.healCost) return false; S.gold -= S.shop.healCost; for (const h of S.party) { if (h.wounds) h.wounds--; h.hp = maxHp(h); } return true; }
 function doRest(S, k) { for (const h of S.party) { if (k === 0 && h.wounds) h.wounds--; const m = maxHp(h); h.hp = Math.min(m, h.hp + Math.round(m * (k === 0 ? 0.6 : 0.25))); }
   if (k === 1) { addBag(S, rollCons(S, S.map[S.pos].act, 1)); addBag(S, mkCons('potion', 1)); } if (k === 2) S.xp += 8; finishNode(S); }
@@ -651,7 +736,7 @@ function chooseEvent(S, ci) {
   const res = applyFx(S, o, hi); S.ev.result = { text: fill(S, (c.x && c.random ? c.x + ' ' : '') + o.x), roll, got: res.got, items: res.items, fight: res.fight }; return true;
 }
 // found gear from an event is handed out one piece at a time
-function eventGive(S, hi) { const r = S.ev.result, it = r.items[0]; if (!it) return false; if (hi < 0) S.gold += it.price >> 1; else if (!give(S, it, hi)) return false; r.items.shift(); return true; }
+function eventGive(S, hi) { const r = S.ev.result, it = r.items[0]; if (!it) return false; if (!give(S, it, hi)) return false; r.items.shift(); return true; }
 function continueEvent(S) { const r = S.ev.result; if (!r || r.items.length) return false; S.ev = null; if (r.fight) startCombat(S, encounter(S, r.fight)); else finishNode(S); return true; }
 
 // ---------- map ----------
@@ -711,12 +796,12 @@ function levelUp(S) {
 }
 function pickSub(S, hi, sub) { const h = S.party[hi]; if (!S.lvl || !S.lvl.need[hi] || !CLASSES[h.cls].subs[sub]) return false; h.sub = sub; S.lvl.need[hi] = false; const sk = CLASSES[h.cls].subs[sub].sk[0]; S.lvl.gained[hi] = [sk];
   if (h.eq.length < 4) h.eq.push(sk); else { const drop = h.eq.slice().sort((a, b) => SK[a].w - SK[b].w)[0]; if (h.ctrl === 'ai' || SK[drop].w < SK[sk].w) h.eq[h.eq.indexOf(drop)] = sk; }
-  if (sub === 'ranger') { if (h.gear.w.type !== 'bow') h.gear.w = mkWeapon('bow', h.gear.w.tier); h.row = 'B'; } if (sub === 'warpriest') h.row = 'F'; return true; }
+  if (sub === 'ranger') { const w = h.gear.w; if (w.type !== 'bow' && w.type !== 'crossbow' && !w.set) h.gear.w = finish({ k: 'weapon', type: 'bow', tier: w.tier, afx: w.afx.slice() }); h.row = 'B'; h.hp = Math.min(h.hp, maxHp(h)); } if (sub === 'warpriest') h.row = 'F'; return true; }
 function closeLevel(S) { if (!S.lvl || S.lvl.need.some(Boolean)) return false; S.lvl = null; const lv = S.party[0].level; if (lv < 5 && S.xp >= XP_AT[lv]) levelUp(S); else S.screen = 'map'; return true; }
 function setEq(S, hi, ids) { const h = S.party[hi], k = known(h); if (ids.length > 4 || ids.some(x => !k.includes(x)) || new Set(ids).size !== ids.length) return false; h.eq = ids.slice(); return true; }
 
-function newRun(seed, seats) {
-  const S = { v: 2, seed: seed | 0, seed0: seed | 0, party: seats.map(newHero), gold: 20, xp: 0, bag: [{ id: 'potion', qty: 2 }], pos: -1, screen: 'map', C: null, ev: null, loot: null, shop: null, lvl: null, nextMod: null, leader: 0, result: null,
+function newRun(seed, seats, diff) {
+  const S = { v: 3, diff: diff ? 1 : 0, seed: seed | 0, seed0: seed | 0, party: seats.map(newHero), gold: 20, xp: 0, bag: [{ id: 'potion', qty: 2 }], stash: [], pos: -1, screen: 'map', C: null, ev: null, loot: null, shop: null, lvl: null, nextMod: null, leader: 0, result: null,
     stats: { fights: 0, kills: 0, downs: 0, combos: 0, checks: 0, passed: 0, nodes: 0 } };
   for (let k = 0; k < 5; k++) rnd(S); S.q = newQuest(S); genMap(S); return S;
 }
@@ -728,19 +813,21 @@ function ending(S) { const q = S.q, f = q.flags, p = [];
   p.push(f.cruel && !f.helped ? `${q.region} is free, though few there are glad to see you pass.` : f.helped ? `In ${q.town} they will tell this story for a hundred years.` : `${q.region} is free.`); return p.join(' '); }
 
 // ---------- autoplay: every decision an AI seat (or a test) needs ----------
-function aiGive(S, it) { let best = -1, bs = 0; S.party.forEach((h, i) => { if (!canUse(h, it)) return; const slot = slotOf(h, it), cur = h.gear[slot]; let s = it.tier - itemScore(cur) + (cur ? 0 : 1.5);
-    if (it.k === 'weapon') { const w = WT[it.type]; if (cur && cur.type !== it.type) s -= 0.6; if (w.two && h.gear.off) s -= 1; if (it.type === 'staff' && cur.type !== 'staff') s -= h.cls === 'mage' ? -2 : 0.5; if (it.type === 'bow' && h.sub !== 'ranger') s -= 2; if (h.sub === 'ranger' && it.type !== 'bow') s -= 3; if (h.cls === 'mage' && it.type !== 'staff') s -= 3; if (it.type === 'spear' && h.cls === 'priest' && h.sub !== 'warpriest') s -= 1; }
-    if (it.k === 'shield' && h.gear.w && WT[h.gear.w.type].two) s -= 3; if (it.k === 'armor' && ARMOR[it.type].slow && h.cls !== 'warrior') s -= 0.5; if (it.k === 'armor' && cur && ARMOR[it.type].rank < ARMOR[cur.type].rank && h.row === 'F') s -= 1;
-    if (it.k === 'trinket') { s = it.tier + (h.gear.t1 && h.gear.t2 ? -Math.min(h.gear.t1.tier, h.gear.t2.tier) - 0.2 : 1.5); const f = it.fx; for (const st of STATS) if (f[st]) s += CLASSES[h.cls].grow[0] === st ? 1 : -1; if (f.thorns || f.startGuard || f.arm) s += h.row === 'F' ? 0.5 : -0.5; }
+function aiGive(S, it) { let best = -1, bs = 0; S.party.forEach((h, i) => { if (!canUse(h, it)) return; const slot = slotOf(h, it), cur = h.gear[slot]; let s = itemScore(it) - itemScore(cur) + (cur ? 0 : 1.5); if (it.set) s += setCount(h, it.set) * 1.5 - (cur && cur.set === it.set ? 9 : 0); else if (cur && cur.set && setCount(h, cur.set) > 1) s -= 2;
+    if (it.k === 'weapon') { const w = WT[it.type]; if (cur && cur.type !== it.type) s -= 0.6; if (w.two && h.gear.off) s -= 1; if (it.type === 'staff' && cur.type !== 'staff') s -= h.cls === 'mage' ? -2 : 0.5; if (it.type === 'bow' && h.sub !== 'ranger') s -= 2; if (it.type === 'crossbow' && h.row === 'F') s -= 1.5; if (it.type === 'wand' && cur.type === 'staff') s -= 1; if (h.cls === 'priest' && h.sub !== 'warpriest' && !WT[it.type].sp && WT[cur.type].sp) s -= 2; if (WT[it.type].sp && h.sub === 'warpriest') s -= 2; if (h.sub === 'ranger' && it.type !== 'bow') s -= 3; if (h.cls === 'mage' && !WT[it.type].sp) s -= 3; if (it.type === 'spear' && h.cls === 'priest' && h.sub !== 'warpriest') s -= 1; }
+    if (it.k === 'shield' && h.gear.w && WT[h.gear.w.type].two) s -= 3; if (it.k === 'shield' && it.type === 'tome' && h.sub === 'warpriest') s -= 1; if (it.k === 'shield' && cur && cur.type !== it.type && it.type === 'parry') s -= 1; if (it.k === 'armor' && ARMOR[it.type].slow && h.cls !== 'warrior') s -= 0.5; if (it.k === 'armor' && cur && ARMOR[it.type].rank < ARMOR[cur.type].rank && h.row === 'F') s -= 1;
+    if (it.k === 'trinket') { s = itemScore(it) + (h.gear.t1 && h.gear.t2 ? -Math.min(itemScore(h.gear.t1), itemScore(h.gear.t2)) - 0.2 : 1.5); if (h.gear.t1 && h.gear.t2 && h.gear.t1.set) s -= 2; const f = it.fx; for (const st of STATS) if (f[st]) s += CLASSES[h.cls].grow[0] === st ? 1 : -1; if (f.thorns || f.startGuard || f.arm) s += h.row === 'F' ? 0.5 : -0.5; }
     if (s > bs) { bs = s; best = i; } }); return best; }
 function autoStep(S) {
-  if (S.screen === 'map') return travel(S, aiRoute(S));
+  if (S.screen === 'map') { for (let n = 0; n < 4; n++) { let done = false; for (let si = 0; si < S.stash.length && !done; si++) { const hi = aiGive(S, S.stash[si]); if (hi >= 0) done = fromStash(S, si, hi); } if (!done) break; } return travel(S, aiRoute(S)); }
   if (S.screen === 'combat') { const C = S.C; if (C.over) { endCombat(S); return true; } const u = unit(C, C.cur); return act(S, C, u.side === 'H' ? aiHero(S, C, u) : aiEnemy(S, C, u)); }
   if (S.screen === 'event') { if (!S.ev.result) return chooseEvent(S, aiEventChoice(S)); if (S.ev.result.items.length) return eventGive(S, aiGive(S, S.ev.result.items[0])); return continueEvent(S); }
-  if (S.screen === 'loot') { let best = -1, bs = 0.4, who = -1; S.loot.items.forEach((it, k) => { if (it.k === 'cons') { if (0.9 > bs) { bs = 0.9; best = k; who = 0; } return; } const hi = aiGive(S, it); if (hi < 0) return; const h = S.party[hi], s = it.k === 'trinket' ? 1.2 + it.tier * 0.2 : it.tier - itemScore(h.gear[slotOf(h, it)]) + 0.5; if (s > bs) { bs = s; best = k; who = hi; } }); return takeLoot(S, best, who); }
-  if (S.screen === 'shop') { const hurtish = S.party.some(h => h.wounds > 0) || S.party.reduce((a, h) => a + h.hp / maxHp(h), 0) / S.party.length < 0.55; if (hurtish && buyHeal(S)) return true;
+  if (S.screen === 'loot') { let best = -1, bs = 0.4, who = -1; S.loot.items.forEach((it, k) => { if (it.k === 'cons') { if (0.9 > bs) { bs = 0.9; best = k; who = 0; } return; } const hi = aiGive(S, it); if (hi < 0) return; const h = S.party[hi], s = it.k === 'trinket' ? 1.2 + itemScore(it) * 0.2 : itemScore(it) - itemScore(h.gear[slotOf(h, it)]) + 0.5; if (s > bs) { bs = s; best = k; who = hi; } }); return takeLoot(S, best, who); }
+  if (S.screen === 'shop') { for (let si = S.stash.length - 1; si >= 0; si--) if (aiGive(S, S.stash[si]) < 0) sellStash(S, si); const hurtish = S.party.some(h => h.wounds > 0) || S.party.reduce((a, h) => a + h.hp / maxHp(h), 0) / S.party.length < 0.55; if (hurtish && buyHeal(S)) return true;
+    for (let hi = 0; hi < S.party.length; hi++) { const c = smithCost(S.party[hi].gear.w, 'upgrade'); if (c && S.gold >= c + 10 && smith(S, hi, 'w', 'upgrade')) return true; }
     for (let k = 0; k < S.shop.items.length; k++) { const it = S.shop.items[k]; if (it.sold || it.price > S.gold) continue; if (it.k === 'cons') { const have = (S.bag.find(b => b.id === it.id) || { qty: 0 }).qty; if ((it.id === 'potion' || it.id === 'salts') && have < 2 && buy(S, k, 0)) return true; continue; }
-      const hi = aiGive(S, it); if (hi < 0) continue; const h = S.party[hi]; if ((it.k === 'trinket' ? !(h.gear.t1 && h.gear.t2) : it.tier > itemScore(h.gear[slotOf(h, it)])) && buy(S, k, hi)) return true; }
+      const hi = aiGive(S, it); if (hi < 0) continue; const h = S.party[hi]; if ((it.k === 'trinket' ? !(h.gear.t1 && h.gear.t2) : itemScore(it) > itemScore(h.gear[slotOf(h, it)])) && buy(S, k, hi)) return true; }
+    for (let hi = 0; hi < S.party.length; hi++) for (const [slot, op] of [['w', 'upgrade'], ['a', 'upgrade'], ['w', 'enchant'], ['off', 'upgrade']]) { const c = smithCost(S.party[hi].gear[slot], op); if (c && S.gold >= c + 15 && smith(S, hi, slot, op)) return true; }
     finishNode(S); return true; }
   if (S.screen === 'rest') { const frac = S.party.reduce((a, h) => a + h.hp / maxHp(h), 0) / S.party.length; doRest(S, frac < 0.75 || S.party.some(h => h.wounds) ? 0 : 2); return true; }
   if (S.screen === 'levelup') { S.lvl.need.forEach((n, i) => { if (n) pickSub(S, i, aiSub(S, i)); }); return closeLevel(S); }
