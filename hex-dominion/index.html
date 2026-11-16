@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hex Dominion</title>
+<style>
+  :root { --bg:#14181d; --panel:#1d232b; --line:#2e3742; --text:#e6e2d6; --dim:#98a1ac; --accent:#e0b64a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel); }
+  h1 { font:700 18px/1 Georgia, serif; letter-spacing:.06em; margin:0 8px 0 0; text-transform:uppercase; }
+  #turn { font-weight:600; display:flex; align-items:center; gap:8px; }
+  #gold { font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums; }
+  .chip { width:14px; height:14px; border-radius:3px; display:inline-block; border:1px solid rgba(0,0,0,.5); flex:none; }
+  #pips { display:flex; gap:4px; }
+  #pips i { width:12px; height:12px; border-radius:50%; background:var(--accent); display:block; }
+  #pips i.used { background:#3a424d; }
+  .spacer { flex:1; }
+  button, select { font:inherit; color:var(--text); background:#2a323c; border:1px solid var(--line); border-radius:6px; padding:6px 12px; cursor:pointer; }
+  button:hover:not(:disabled) { background:#35404c; }
+  button:disabled { opacity:.45; cursor:default; }
+  button.primary { background:var(--accent); color:#1b1608; border-color:#b08d2f; font-weight:700; }
+  button.primary:hover:not(:disabled) { background:#ecc762; }
+  button.pulse { box-shadow:0 0 0 3px rgba(224,182,74,.35); }
+  label { color:var(--dim); display:flex; align-items:center; gap:6px; }
+  #setup { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+  body.setupoff #setup { display:none; }
+  #setupToggle { padding:4px 10px; }
+  #players { display:flex; gap:6px; align-items:center; }
+  #players label { gap:3px; }
+  #players select { padding:4px 4px; }
+  main { display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:14px; padding:14px 16px; }
+  @media (min-width:901px) { html, body { height:100%; } body { display:flex; flex-direction:column; overflow:hidden; } main { flex:1; min-height:0; }
+    main > section { display:flex; flex-direction:column; min-height:0; } #mapwrap { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; } aside { overflow-y:auto; min-height:0; padding-right:4px; }
+    body.nopanel main { grid-template-columns:minmax(0,1fr); } body.nopanel aside { display:none; }
+    body.max header { padding:4px 8px; gap:6px 10px; } body.max h1 { display:none; }
+    body.max main { padding:4px; gap:6px; } body.max.nopanel main { grid-template-columns:minmax(0,1fr); } body.max #mapwrap { padding:2px; border-radius:4px; } body.max #status { margin-top:2px; min-height:18px; font-size:12.5px; }
+    body.max aside { padding-right:2px; } }
+  @media (max-width:900px) { main { grid-template-columns:1fr; } #panel { display:none; } }
+  #mapwrap { background:#1c3448; border:1px solid var(--line); border-radius:10px; padding:8px; }
+  canvas { display:block; cursor:pointer; }
+  #status { min-height:22px; margin-top:8px; color:var(--dim); }
+  #splitbar { min-height:30px; margin-top:6px; display:flex; gap:6px; align-items:center; color:var(--dim); font-size:13px; flex-wrap:wrap; }
+  #splitbar button { padding:3px 10px; font-size:12.5px; }
+  #splitbar button.on { background:var(--accent); color:#1b1608; border-color:#b08d2f; font-weight:700; }
+  aside { display:flex; flex-direction:column; gap:14px; min-width:0; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; }
+  .card h2 { font:600 12px/1 system-ui; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); margin:0 0 10px; }
+  .card p { margin:6px 0 0; font-size:12.5px; color:var(--dim); }
+  .nation { padding:8px 0; border-top:1px solid var(--line); }
+  .nation:first-of-type { border-top:0; padding-top:0; }
+  .nation .top { display:flex; align-items:center; gap:8px; font-weight:600; }
+  .nation.dead .top { text-decoration:line-through; color:var(--dim); }
+  .nation .meta { color:var(--dim); font-size:12px; margin:3px 0 5px; }
+  .bar { height:6px; background:#12161a; border-radius:3px; overflow:hidden; }
+  .bar b { display:block; height:100%; }
+  .nation button, .acts button, .tech button { padding:3px 9px; font-size:12px; }
+  .nation button { margin-top:7px; }
+  .peace { color:#8fd3a0; font-size:12px; font-weight:600; margin-left:auto; }
+  table.t { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  table.t td { padding:3px 0; }
+  table.t td:last-child { text-align:right; font-weight:700; }
+  table.t td small { color:var(--dim); }
+  table.t tr.total td { border-top:1px solid var(--line); padding-top:6px; color:var(--accent); }
+  .acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; align-items:center; }
+  .acts span { font-size:12px; color:var(--dim); width:100%; margin-bottom:-2px; }
+  .tech { padding:8px 0; border-top:1px solid var(--line); }
+  .tech:first-of-type { border-top:0; padding-top:0; }
+  .tech .top { display:flex; align-items:center; gap:8px; font-weight:600; }
+  .tech .lv { margin-left:auto; display:flex; gap:3px; }
+  .tech .lv i { width:9px; height:9px; border-radius:2px; background:#3a424d; display:block; }
+  .tech .lv i.on { background:var(--accent); }
+  .tier { display:flex; gap:8px; align-items:center; font-size:12.5px; padding:4px 0; color:var(--dim); }
+  .tier .txt { flex:1; min-width:0; }
+  .tier b { color:var(--text); }
+  .tech .meta { color:var(--dim); font-size:12px; margin:2px 0 2px; }
+  .tier.have b { color:#8fd3a0; }
+  .tier .tag { font-size:12px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .tier.have .tag { color:#8fd3a0; }
+  .tier button { white-space:nowrap; }
+  #log { max-height:200px; overflow:auto; font-size:12.5px; color:var(--dim); display:flex; flex-direction:column; gap:3px; }
+  #log div:first-child { color:var(--text); }
+  .help { font-size:12.5px; color:var(--dim); }
+  .help p { margin:0 0 6px; }
+  .help b { color:var(--text); }
+  #modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; padding:20px; z-index:5; }
+  #modal.on { display:flex; }
+  #modal .box { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:22px; max-width:400px; width:100%; text-align:center; }
+  #modal h3 { margin:0 0 8px; font:700 20px Georgia, serif; }
+  #modal p { color:var(--dim); margin:0 0 16px; }
+  #modal .btns { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Hex Dominion</h1>
+  <div id="turn"></div>
+  <div id="gold"></div>
+  <div id="pips" title="Moves left this turn"></div>
+  <button id="end" class="primary">End turn</button>
+  <div class="spacer"></div>
+  <button id="setupToggle" title="Show or hide the game setup controls" aria-expanded="true">Setup ▴</button>
+  <span id="setup">
+    <label><input type="checkbox" id="fast"> Fast AI</label>
+    <label title="When an army leaves a town that is in unrest, about a quarter stays behind to hold it"><input type="checkbox" id="autog" checked> Auto-garrison</label>
+    <label>AI <select id="level"><option value="2">Veteran</option><option value="1">Standard</option></select></label>
+    <span id="players" title="Set each nation to a human player or the AI. Changing this starts a new map."></span>
+    <button id="new">New map</button>
+  </span>
+  <button id="panel" title="Show or hide the side panel">Hide panel</button>
+  <button id="full" title="Fill the whole screen">Fullscreen</button>
+</header>
+<main>
+  <section>
+    <div id="mapwrap"><canvas id="cv"></canvas></div>
+    <div id="splitbar"></div>
+    <div id="status"></div>
+  </section>
+  <aside>
+    <div class="card"><h2>Treasury</h2><div id="income"></div></div>
+    <div class="card"><h2>Selected hex</h2><div id="orders"></div></div>
+    <div class="card"><h2>Research</h2><div id="tech"></div></div>
+    <div class="card"><h2>Nations</h2><div id="nations"></div></div>
+    <div class="card"><h2>Chronicle</h2><div id="log"></div></div>
+    <div class="card help"><h2>How to play</h2>
+      <p><b>Gold.</b> Your capital, towns, workshops and ports pay gold every turn. Nothing is automatic: click a hex and spend it in the Selected hex card, or on Research.</p>
+      <p><b>Troops</b> cost 1 gold each, raised in any calm town or port you own. Troops raised this turn cannot move until next turn; if they join an army, only the troops that were already there can move.</p>
+      <p><b>Splitting.</b> With an army selected, pick ¼, ½, ¾ or All under the map before you move. Each side of a split must have at least 10 troops. The part left behind can still move later this turn. With Auto-garrison on, an army leaving a town in unrest leaves about a quarter behind (at least 10).</p>
+      <p><b>Moves.</b> 5 per turn, +1 per 3 towns (max 12). Land armies go 2 hexes, further along roads. Each army moves once per turn.</p>
+      <p><b>Battles.</b> Power is size × morale factor. The loser is wiped out, but a failed attack still bleeds the defender.</p>
+      <p><b>Morale</b> is the small number, 1 to 5: 1 fights at 80%, 3 at 100%, 5 at 120%. It belongs to each army: +1 for beating an army of 8+, repelling one, or taking a town; everyone gets +1 when you take a capital. Merging averages it. Low morale recovers to 3 in a calm town.</p>
+      <p><b>Works.</b> Farms (your land within 2 of your town), mills (rivers), mines (mountains with gold dots) and fisheries (sea) pay gold, and pay more when linked to a mill, a workshop town or a port: within 2 hexes, or any distance along your own road. They are outlined in their owner's color and can be burned for half their cost: a farm when its hex changes hands, the others when an enemy army ends its move next to them.</p>
+      <p><b>Walls</b> add defense and post a militia, so an empty walled town must be stormed. Capitals start with level 2 walls.</p>
+      <p><b>Unrest.</b> A town taken from someone pays nothing for 3 turns and may revolt if no army holds it.</p>
+      <p><b>Supply.</b> An army whose land is not connected to one of your towns (red dashed ring) loses 1 morale a turn, then troops.</p>
+      <p><b>Capitals.</b> Taking one eliminates that nation and loots half its gold. Its garrisoned towns turn rebel; the rest of its land goes free.</p>
+      <p><b>Sea.</b> Armies embark at ports or wharves, sail 3, and land on any coast (defender +3). The map's ports are full towns: gold, recruiting, walls, workshops, unrest. A wharf you build is only a launch point.</p>
+      <p><b>Players.</b> Set each color to Human or AI in the header. With two or more humans the game asks you to pass the device at each turn.</p>
+    </div>
+  </aside>
+</main>
+<div id="modal"><div class="box"><h3 id="mtitle"></h3><p id="mtext"></p><div class="btns" id="mbtns"></div></div></div>
+
+<script>
+// ===LOGIC-START===
+const W = 27, H = 17, MOVES = 5, MAX_MOVES = 12, TOWNS_PER_MOVE = 3, RANGE = 2, SEA_RANGE = 3, CAP = 99, LAND_PER_BONUS = 15, AMPHIB = 3;
+const CAP_BASE = 6, TOWN_YIELD = 3, SHOP_YIELD = 3, REBEL = 4, UNREST = 3, REVOLT = 0.35, START_GOLD = 10;
+const COST = { road: 3, tower: 10, wharf: 10, bridge: 18, walls: [10, 20, 30], shop: [15, 30], farm: 8, mill: 12, mine: 16, fish: 12 };
+const SPLIT_MIN = 10;   // a split must leave at least this many troops on each side
+const LINK = 2;   // a work is linked to a mill, workshop town or port within this many hexes, or along your roads
+const WORK = { farm: 'farm', mill: 'mill', mine: 'mine', fish: 'fishery' };
+const NATIONS = [
+  { name: 'Crimson', color: '#c9463d', light: '#e2a59e' },
+  { name: 'Azure',   color: '#3d72c9', light: '#a3bbe6' },
+  { name: 'Verdant', color: '#3a9354', light: '#a5d1af' },
+  { name: 'Amber',   color: '#c9951c', light: '#ecd692' },
+  { name: 'Rebels',  color: '#5d5d5d', light: '#b9b5aa' }
+];
+const TECH_COST = [20, 25, 30, 35];   // price of the 1st, 2nd, 3rd, 4th tech bought in a branch, in any order
+const BRANCH = { M: 'Military', E: 'Economy', N: 'Engineering' };
+const TECH = {
+  M: [{ name: 'Drill', desc: 'Recruits arrive at morale 4 instead of 3.' },
+      { name: 'Siegecraft', desc: 'Enemy walls, forts and towers count half against you.' },
+      { name: 'Forced March', desc: 'Land armies can move a 3rd hex when it is inside your own territory.' },
+      { name: 'Shock Tactics', desc: '+8% power when attacking.' }],
+  E: [{ name: 'Taxation', desc: '+1 gold per town.' },
+      { name: 'Masonry', desc: 'Walls, roads, towers, ports and bridges cost 40% less.' },
+      { name: 'Administration', desc: 'Unrest lasts 2 turns instead of 3, and you get +1 move per turn.' },
+      { name: 'Industry', desc: 'Workshops pay double.' }],
+  N: [{ name: 'Pontoons', desc: 'Armies can cross a river anywhere (but cannot stop on it). Mills pay +1.' },
+      { name: 'Marines', desc: 'No penalty when landing from ships, and ships sail 4. Fisheries pay +1.' },
+      { name: 'Mountaineers', desc: 'Armies can cross mountains (but cannot stop on them). Mines pay +1.' },
+      { name: 'Shipwrights', desc: 'Armies can embark from any coast you own, no port or wharf needed. Ports pay +2.' }]
+};
+const DE = [[1,0],[0,-1],[-1,-1],[-1,0],[-1,1],[0,1]];   // E NE NW W SW SE on even rows
+const DO = [[1,0],[1,-1],[0,-1],[-1,0],[0,1],[1,1]];     // same on odd rows
+const NB = [];
+for (let i = 0; i < W * H; i++) {
+  const c = i % W, r = (i / W) | 0, D = (r & 1) ? DO : DE;
+  NB.push(D.map(([dc, dr]) => { const x = c + dc, y = r + dr; return (x < 0 || y < 0 || x >= W || y >= H) ? -1 : y * W + x; }));
+}
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hexDist(a, b) {
+  const ac = a % W, ar = (a / W) | 0, bc = b % W, br = (b / W) | 0;
+  const ax = ac - ((ar - (ar & 1)) >> 1), bx = bc - ((br - (br & 1)) >> 1);
+  const dx = ax - bx, dz = ar - br;
+  return Math.max(Math.abs(dx), Math.abs(dz), Math.abs(dx + dz));
+}
+// terrain: 0 land, 1 sea, 2 mountain, 3 river
+function setT(c, t) { c.t = t; c.land = t === 0; c.sea = t === 1; }
+const isTown = c => c.town || c.port || c.capital >= 0;   // the map's original ports are towns with a harbour
+const inland = c => c.town || c.capital >= 0;
+const isSite = c => isTown(c) || c.tower;
+// morale runs 1 to 5 and scales strength linearly from 80% to 120%
+const power = a => a.count * (0.7 + 0.1 * a.morale);
+const mor = (a, d) => { a.morale = Math.max(1, Math.min(5, a.morale + d)); };
+const tech = (S, n, b, l) => n >= 0 && n < 4 && S.nations[n].tech[b][l - 1];
+const techCount = (N, b) => N.tech[b].filter(Boolean).length;
+const techCost = (N, b) => TECH_COST[techCount(N, b)];
+const atk = (S, a) => power(a) * (tech(S, a.owner, 'M', 4) ? 1.08 : 1);
+const hostile = (S, a, b) => a !== b && !S.pact[a][b] && !S.cooldown[a][b];
+const blocked = (S, n, c) => c.land && c.owner >= 0 && c.owner !== n && !hostile(S, n, c.owner);
+const ownCapital = (S, c) => c.capital >= 0 && c.capital === c.owner && S.nations[c.owner].alive;
+function defBonus(S, i, att) {
+  const c = S.cells[i]; if (!c.land) return 0;
+  const b = (ownCapital(S, c) ? 8 : isTown(c) ? 4 : 0) + (c.tower ? 3 : 0) + c.walls * 5;
+  return att !== undefined && tech(S, att, 'M', 2) ? Math.ceil(b / 2) : b;
+}
+const amphib = (S, from, to, n) => (S.cells[from].sea && S.cells[to].land && !tech(S, n, 'N', 2)) ? AMPHIB : 0;
+const walled = (c, n) => c.land && c.walls > 0 && isTown(c) && c.owner >= 0 && c.owner !== n;
+const defender = (S, t) => S.cells[t].army || { owner: S.cells[t].owner, count: 4 * S.cells[t].walls, morale: 3, militia: true };
+const price = (S, n, base) => tech(S, n, 'E', 2) ? Math.ceil(base * 0.6) : base;
+
+function newGame(seed, human) {
+  for (let attempt = 0; ; attempt++) {
+    const rng = mulberry32(seed + attempt * 7919), ri = n => (rng() * n) | 0, N = W * H;
+    const cells = [];
+    for (let i = 0; i < N; i++) cells.push({ t: 0, land: true, sea: false, owner: -1, town: false, port: false, bridge: false, capital: -1, army: null, walls: 0, shop: 0, road: false, tower: false, unrest: 0, b: '', bo: -1, ore: false, wharf: false, down: -1 });
+    // elevation from a handful of stretched bumps: negative ones become seas and gulfs, positive ones mountain ranges
+    const bumps = [];
+    for (let k = 0; k < 13; k++) { const th = rng() * Math.PI, sx = 2.5 + rng() * 4.5; bumps.push({ x: rng() * W, y: rng() * H * 0.866, a: (k < 6 ? -1 : 1) * (0.7 + rng() * 0.7), cs: Math.cos(th), sn: Math.sin(th), sx, sy: 0.9 + rng() * 1.3 }); }
+    const elev = cells.map((c, i) => { const x = i % W + 0.5 * (((i / W) | 0) & 1), y = ((i / W) | 0) * 0.866; let e = (rng() - 0.5) * 0.3;
+      for (const b of bumps) { const dx = x - b.x, dy = y - b.y, u = (dx * b.cs + dy * b.sn) / b.sx, v = (-dx * b.sn + dy * b.cs) / b.sy; e += b.a * Math.exp(-(u * u + v * v) / 2); } return e; });
+    const rank = [...elev.keys()].sort((p, q) => elev[p] - elev[q]);
+    const nSea = Math.round(N * (0.17 + rng() * 0.09)), nMtn = Math.round(N * (0.035 + rng() * 0.03));
+    rank.slice(0, nSea).forEach(i => setT(cells[i], 1)); rank.slice(N - nMtn).forEach(i => setT(cells[i], 2));
+    const pick = (c0, r0) => (r0 + ri(3)) * W + c0 + ri(3);
+    const caps = [pick(1, 1), pick(W - 4, 1), pick(W - 4, H - 4), pick(1, H - 4)];
+    const nearCap = (i, d) => caps.some(c => hexDist(c, i) <= d);
+    caps.forEach(ci => { setT(cells[ci], 0); NB[ci].forEach(x => { if (x >= 0) setT(cells[x], 0); }); });
+    for (let k = 0, want = 12 + ri(6), tries = 0; k < want && tries < 400; tries++) { const i = ri(N);   // lone peaks and small hills away from the ranges
+      if (cells[i].t !== 0 || nearCap(i, 2) || NB[i].some(x => x < 0 || cells[x].t !== 0)) continue; setT(cells[i], 2); k++; }
+    // rivers rise beside mountains and always flow to a lake or the ocean: every step gets strictly closer to water, so a river
+    // can never loop or dead-end. A river that meets an earlier one joins it as a tributary. c.down records where each hex drains.
+    const seaDist = new Array(N).fill(99), sq = [];
+    cells.forEach((c, i) => { if (c.sea) { seaDist[i] = 0; sq.push(i); } });
+    for (let h = 0; h < sq.length; h++) { const p = sq[h]; for (const x of NB[p]) if (x >= 0 && cells[x].t === 0 && seaDist[x] > seaDist[p] + 1) { seaDist[x] = seaDist[p] + 1; sq.push(x); } }
+    const sources = []; cells.forEach((c, i) => { if (c.t === 0 && !nearCap(i, 2) && seaDist[i] >= 5 && seaDist[i] < 99 && NB[i].some(x => x >= 0 && cells[x].t === 2)) sources.push(i); });
+    let riverLen = 0; const rivers = [];
+    for (let k = 0, tries = 0; k < 4 && tries < 60 && sources.length; tries++) {
+      const near = rivers.length && rng() < 0.75 ? sources.filter(x => rivers.some(r => r.some(y => hexDist(x, y) <= 4 && seaDist[y] < seaDist[x] - 1))) : [];
+      const pool = near.length ? near : sources, src = pool[ri(pool.length)]; if (cells[src].t !== 0 || NB[src].some(x => x >= 0 && cells[x].t === 3)) continue;
+      const path = [src], down = {}; let end = -1;
+      while (end < 0) { const p = path[path.length - 1];
+        const join = NB[p].filter(x => x >= 0 && cells[x].t === 3 && seaDist[x] <= seaDist[p]); if (join.length) { end = join.reduce((m, x) => seaDist[x] < seaDist[m] ? x : m); break; }
+        const mouth = NB[p].filter(x => x >= 0 && cells[x].sea); if (mouth.length) { end = mouth[ri(mouth.length)]; break; }
+        const opts = NB[p].filter(x => x >= 0 && cells[x].t === 0 && seaDist[x] === seaDist[p] - 1 && !nearCap(x, 1)
+          && !NB[x].some(y => y >= 0 && y !== p && path.includes(y))
+          && (rv => rv.length === 0 || (rv.length === 1 && seaDist[rv[0]] <= seaDist[x] && path.length >= 2))(NB[x].filter(y => y >= 0 && cells[y].t === 3)));   // only touch another river to join it
+        if (!opts.length) break;
+        const pull = x => NB[x].some(y => y >= 0 && cells[y].t === 3) ? 0.9 : 0;   // a river passing nearby draws tributaries in
+        path.push(opts.map(x => [x, elev[x] + rng() * 0.25 - pull(x)]).reduce((m, v) => v[1] < m[1] ? v : m)[0]); }
+      if (end < 0 || path.length < (cells[end].sea ? 4 : 3)) continue;
+      path.forEach((x, idx) => { setT(cells[x], 3); cells[x].down = idx + 1 < path.length ? path[idx + 1] : end; });
+      rivers.push(path); riverLen += path.length; k++;
+    }
+    // bridges go only where they save a real detour: open land on both banks and a long walk around without the bridge
+    const walk = (a, b, skip) => { const d = new Map([[a, 0]]), q = [a];
+      for (let h = 0; h < q.length; h++) { const p = q[h], dp = d.get(p); if (dp >= 12) continue;
+        for (const x of NB[p]) if (x >= 0 && x !== skip && cells[x].t === 0 && !d.has(x)) { if (x === b) return dp + 1; d.set(x, dp + 1); q.push(x); } }
+      return 99; };
+    const saves = x => { const L = NB[x].filter(y => y >= 0 && cells[y].t === 0); let best = 0;
+      for (let a = 0; a < L.length; a++) for (let b = a + 1; b < L.length; b++) if (!NB[L[a]].includes(L[b])) best = Math.max(best, walk(L[a], L[b], x));
+      return best; };
+    // bridges sit along the middle of a river, spread evenly, never on the first or last two hexes where you could
+    // just walk around the source or where the crossing is pinned against the coast
+    for (const path of rivers) { const L = path.length, lo = Math.min(2, (L - 1) >> 1), hi = Math.max(lo, L - 3);
+      const want = Math.max(1, Math.round(L / 5));
+      for (let n = 1; n <= want; n++) { const target = Math.round(lo + (hi - lo) * n / (want + 1)); let bi = -1, bs = 4;
+        for (let idx = Math.max(lo, target - 1); idx <= Math.min(hi, target + 1); idx++) { const x = path[idx]; if (cells[x].t !== 3) continue;
+          const sc = saves(x) - Math.abs(idx - target) * 0.5; if (sc > bs) { bs = sc; bi = idx; } }
+        if (bi >= 0) { setT(cells[path[bi]], 0); cells[path[bi]].bridge = true; } } }
+    if (riverLen < 8) continue;
+    const flood = (start, ok) => { const seen = new Set([start]), q = [start]; while (q.length) { const p = q.pop(); for (const x of NB[p]) if (x >= 0 && ok(cells[x]) && !seen.has(x)) { seen.add(x); q.push(x); } } return seen; };
+    const main = flood(caps[0], c => c.land); if (!caps.every(c => main.has(c))) continue;
+    const bigSea = new Set(), done = new Set();
+    cells.forEach((c, i) => { if (c.sea && !done.has(i)) { const comp = flood(i, x => x.sea); comp.forEach(x => done.add(x)); if (comp.size >= 10) comp.forEach(x => bigSea.add(x)); } });
+    if (!bigSea.size) continue;
+    const coastal = i => NB[i].some(x => x >= 0 && bigSea.has(x));
+    const islands = [], seenL = new Set(main);
+    cells.forEach((c, i) => { if (c.land && !seenL.has(i)) { const comp = flood(i, x => x.land); comp.forEach(x => seenL.add(x)); const coast = [...comp].filter(coastal);
+      if (coast.length) islands.push({ comp, coast }); else comp.forEach(x => { setT(cells[x], 2); cells[x].bridge = false; }); } });
+    // fairness without symmetry: every nation gets a comparable home region and the same number of home towns
+    const ld = caps.map(ci => { const d = new Array(N).fill(99); d[ci] = 0; const q = [ci]; for (let h = 0; h < q.length; h++) for (const x of NB[q[h]]) if (x >= 0 && cells[x].land && d[x] > d[q[h]] + 1) { d[x] = d[q[h]] + 1; q.push(x); } return d; });
+    const region = i => { let b = -1, bd = 99, tie = false; for (let k = 0; k < 4; k++) { if (ld[k][i] < bd) { bd = ld[k][i]; b = k; tie = false; } else if (ld[k][i] === bd) tie = true; } return tie ? -1 : b; };
+    { const lodes = [], near = (i, f) => NB[i].some(x => x >= 0 && main.has(x) && f(x)), far = i => lodes.every(l => hexDist(l, i) >= 3);
+      const mts = []; cells.forEach((c, i) => { if (c.t === 2) mts.push(i); }); for (let i = mts.length - 1; i > 0; i--) { const j = ri(i + 1); [mts[i], mts[j]] = [mts[j], mts[i]]; }
+      let fair = true;
+      for (let k = 0; k < 4; k++) { const i = mts.find(i => far(i) && near(i, x => region(x) === k && ld[k][x] >= 2 && ld[k][x] <= 6)); if (i === undefined) { fair = false; break; } cells[i].ore = true; lodes.push(i); }
+      if (!fair) continue;
+      for (const i of mts) { if (lodes.length >= 11) break; if (!cells[i].ore && far(i) && near(i, x => { const ds = ld.map(d => d[x]).sort((p, q) => p - q); return ds[0] >= 5 && ds[1] - ds[0] <= 2; })) { cells[i].ore = true; lodes.push(i); } } }
+    const sizes = [0, 0, 0, 0]; main.forEach(i => { const r = region(i); if (r >= 0) sizes[r]++; });
+    if (Math.min(...sizes) < 35 || Math.min(...sizes) / Math.max(...sizes) < 0.6) continue;
+    const order = [...main]; for (let i = order.length - 1; i > 0; i--) { const j = ri(i + 1); [order[i], order[j]] = [order[j], order[i]]; }
+    const sites = [], free = (i, d) => !cells[i].bridge && !nearCap(i, 2) && sites.every(t => hexDist(t, i) >= d);
+    let ok = true;
+    for (let k = 0; k < 4 && ok; k++) { let got = 0;
+      // two towns close to home and two further out, so every nation has the same early reach
+      for (const [lo, hi] of [[3, 5], [7, 10]]) { let ring = 0;
+        for (const i of order) { if (ring >= 2) break; if (region(i) !== k || ld[k][i] < lo || ld[k][i] > hi || !free(i, 3)) continue; cells[i].town = true; sites.push(i); ring++; got++; } }
+      if (got < 4) ok = false; }
+    if (!ok) continue;
+    let extra = 0; for (const i of order) { if (extra >= 5) break; const ds = ld.map(d => d[i]).sort((a, b) => a - b); if (ds[0] < 7 || ds[1] - ds[0] > 2 || !free(i, 3)) continue; cells[i].town = true; sites.push(i); extra++; }
+    for (const I of islands) { const i = I.coast[ri(I.coast.length)]; cells[i].town = true; cells[i].port = true; sites.push(i); }
+    // one home port per nation, the rest only in contested borderland: a port is worth a town now
+    const ports = []; const portOK = i => coastal(i) && !cells[i].town && !cells[i].bridge && !nearCap(i, 1) && ports.every(p => hexDist(p, i) >= 4) && sites.every(t => hexDist(t, i) >= 2);
+    let havePorts = true;
+    for (let k = 0; k < 4 && havePorts; k++) { const i = order.find(i => region(i) === k && ld[k][i] >= 3 && ld[k][i] <= 8 && portOK(i)); if (i === undefined) havePorts = false; else { cells[i].port = true; ports.push(i); sites.push(i); } }
+    if (!havePorts) continue;
+    for (const i of order) { if (ports.length >= 7) break; const ds = ld.map(d => d[i]).sort((a, b) => a - b); if (ds[0] >= 7 && ds[1] - ds[0] <= 2 && portOK(i)) { cells[i].port = true; ports.push(i); sites.push(i); } }
+    // start-quality check, fitted on 3,000 AI-only games: being far from the other capitals and having ports helped,
+    // while rivers, bridges and crowding in the home region hurt. Reject maps where one nation is clearly better off.
+    { const reg = cells.map((c, i) => c.land ? region(i) : -1), near = (i, k) => NB[i].some(x => x >= 0 && reg[x] === k);
+      const q = caps.map((ci, k) => { let v = 0; for (let j = 0; j < 4; j++) if (j !== k) v += Math.min(40, ld[k][caps[j]]) / 3 * 0.0622;
+        cells.forEach((c, i) => { if (c.t === 3 && near(i, k)) v -= 0.02; else if (c.t === 2 && near(i, k)) v += 0.0189;
+          else if (c.land) { if (c.town && ld[k][i] <= 10) v -= 0.0605; if (c.port && ld[k][i] <= 8) v += 0.0587; if (c.bridge && ld[k][i] <= 6) v -= 0.0559; } });
+        return v; });
+      if (Math.max(...q) - Math.min(...q) > 0.32 + attempt * 0.001) continue; }   // the bar eases slowly so generation always finishes
+    caps.forEach((ci, k) => {
+      cells[ci].capital = k; cells[ci].owner = k; cells[ci].walls = 2; cells[ci].army = { owner: k, count: 10, morale: 3, moved: false };
+      NB[ci].forEach(x => { if (x >= 0 && cells[x].land) cells[x].owner = k; });
+    });
+    const f5 = () => [0, 1, 2, 3, 4].map(() => [false, false, false, false, false]);
+    const S = { cells, rng, ai: [2, 2, 2, 2],
+      nations: NATIONS.slice(0, 4).map((n, i) => ({ ...n, id: i, alive: true, cap: caps[i], human: i === human, gold: START_GOLD, fund: 0, tech: { M: [false, false, false, false], E: [false, false, false, false], N: [false, false, false, false] }, researched: false, bent: 'MEN'[ri(3)] })),
+      auto: [true, true, true, true], pact: f5(), cooldown: f5(), noPact: [0, 1, 2, 3].map(() => [0, 0, 0, 0]), cur: 0, first: 0, movesLeft: MOVES, movesMax: MOVES, round: 1, log: [], offers: [], proposed: [false, false, false, false], winner: -1, collected: 0 };
+    S.first = S.cur = ri(4);
+    for (let k = 0; k < 4; k++) S.cells[caps[(S.first + k) % 4]].army.count += 4 * k;   // later movers start larger
+    startTurn(S, S.cur);
+    return S;
+  }
+}
+function bump(S, n, d) { for (const c of S.cells) if (c.army && c.army.owner === n) mor(c.army, d); }
+// what links works together: straight-line range, or any length of your own connected road
+function ecoCtx(S, n) {
+  const cells = S.cells, comp = new Map(); let id = 0;
+  cells.forEach((c, i) => { if (!c.road || c.owner !== n || comp.has(i)) return; const q = [i]; comp.set(i, id);
+    while (q.length) { const p = q.pop(); for (const x of NB[p]) if (x >= 0 && cells[x].road && cells[x].owner === n && !comp.has(x)) { comp.set(x, id); q.push(x); } } id++; });
+  const roads = i => { const r = []; for (const q of [i, ...NB[i]]) if (q >= 0 && comp.has(q)) r.push(comp.get(q)); return r; };
+  const linked = (a, b) => { if (hexDist(a, b) <= LINK) return true; const A = roads(a); return A.length > 0 && roads(b).some(x => A.includes(x)); };
+  const mills = [], shops = [], ports = [];
+  cells.forEach((c, i) => { if (c.b === 'mill' && c.bo === n) mills.push(i); if (c.owner === n && isTown(c) && c.shop > 0 && !c.unrest) shops.push(i); if (c.owner === n && c.port) ports.push(i); });
+  return { linked, mills, shops, ports, eng: S.nations[n].tech.N };
+}
+function yieldAt(ctx, i, kind) {
+  if (kind === 'farm') return 1 + (ctx.mills.some(m => ctx.linked(i, m)) ? 1 : 0);
+  if (kind === 'mill') return 2 + (ctx.eng[0] ? 1 : 0);
+  if (kind === 'mine') return 3 + (ctx.shops.some(t => ctx.linked(i, t)) ? 2 : 0) + (ctx.eng[2] ? 1 : 0);
+  return 2 + (ctx.ports.some(t => ctx.linked(i, t)) ? 1 : 0) + (ctx.eng[1] ? 1 : 0);
+}
+function income(S, n) {
+  let land = 0, towns = 0, calm = 0, shops = 0, ports = 0;
+  for (const c of S.cells) if (c.owner === n) { land++;
+    if (c.capital === n) shops += c.shop; else if (isTown(c)) { towns++; if (!c.unrest) { calm++; shops += c.shop; } }
+    if (c.port && !c.unrest) ports++; }
+  const w = { farm: 0, mill: 0, mine: 0, fish: 0 }, wg = { farm: 0, mill: 0, mine: 0, fish: 0 }, cells = S.cells, ctx = ecoCtx(S, n);
+  cells.forEach((c, i) => { if (c.b && c.bo === n) { w[c.b]++; wg[c.b] += yieldAt(ctx, i, c.b); } });
+  const works = wg.farm + wg.mill + wg.mine + wg.fish;
+  const bonus = (land / LAND_PER_BONUS) | 0, perTown = TOWN_YIELD + (tech(S, n, 'E', 1) ? 1 : 0), perShop = SHOP_YIELD * (tech(S, n, 'E', 4) ? 2 : 1);
+  const perPort = tech(S, n, 'N', 4) ? 2 : 0;
+  return { land, towns, calm, shops, ports, bonus, perTown, perShop, perPort, w, wg, works, nextAt: (bonus + 1) * LAND_PER_BONUS,
+    gold: CAP_BASE + bonus + calm * perTown + shops * perShop + ports * perPort + works,
+    moves: Math.min(MAX_MOVES, MOVES + ((towns / TOWNS_PER_MOVE) | 0) + (tech(S, n, 'E', 3) ? 1 : 0)) };
+}
+function supplied(S, n) {
+  const seen = new Set(), q = [];
+  S.cells.forEach((c, i) => { if (c.owner === n && isTown(c)) { seen.add(i); q.push(i); } });
+  while (q.length) { const p = q.pop(); for (const x of NB[p]) if (x >= 0 && !seen.has(x) && S.cells[x].owner === n) { seen.add(x); q.push(x); } }
+  return seen;
+}
+function startTurn(S, n) {
+  const N = S.nations[n];
+  S.cooldown[n] = [false, false, false, false, false]; S.proposed = [false, false, false, false]; N.researched = false;
+  S.cells.forEach(c => { if (c.owner !== n || !c.unrest) return;
+    if (!c.army && S.rng() < REVOLT) { c.owner = -1; c.unrest = 0; S.log.push(`An ungarrisoned town revolted against ${N.name} and is free again.`); } else c.unrest--; });
+  const inc = income(S, n); N.gold += inc.gold; S.collected = inc.gold; S.movesLeft = S.movesMax = inc.moves;
+  const sup = supplied(S, n);
+  S.cells.forEach((c, i) => { const a = c.army; if (!a || a.owner !== n) return; a.moved = false; a.fresh = 0; a.cut = c.land && !sup.has(i);
+    if (a.cut) { if (a.morale > 1) a.morale--; else a.count = Math.max(1, Math.floor(a.count * 0.85)); }
+    else if (a.morale < 3 && c.land && isTown(c) && !c.unrest) a.morale++; });
+}
+function nextTurn(S) {
+  if (S.winner >= 0) return;
+  do { S.cur = (S.cur + 1) % 4; if (S.cur === S.first) S.round++; } while (!S.nations[S.cur].alive);
+  startTurn(S, S.cur);
+}
+// troops raised this turn cannot move yet; the rest are veterans
+const vets = a => a.count - (a.fresh || 0);
+// how many troops leave when this army moves: a chosen fraction, or everyone who can (minus an automatic garrison in a restless town)
+function movers(S, from, frac) {
+  const A = S.cells[from], a = A.army; if (!a || a.moved) return -1; const v = vets(a); if (v < 1) return -1;
+  if (frac !== undefined && frac < 1) { const m = Math.round(v * frac); return m >= SPLIT_MIN && a.count - m >= SPLIT_MIN ? m : -1; }
+  if (frac === undefined && S.auto[a.owner] && A.land && A.unrest > 0 && isTown(A)) { const g = Math.max(0, Math.max(SPLIT_MIN, Math.round(a.count / 4)) - (a.fresh || 0)); if (v - g >= SPLIT_MIN) return v - g; }
+  return v;
+}
+function reachable(S, from, cnt) {
+  const cells = S.cells, F = cells[from], full = F.army, a = { owner: full.owner, count: cnt !== undefined ? cnt : Math.max(1, vets(full)) }, n = a.owner, res = new Map(), prev = {};
+  const visit = q => { const c = cells[q];
+    if (c.army) { if (c.army.owner === n) { if (c.army.count + a.count <= CAP) res.set(q, 'merge'); return true; } if (hostile(S, n, c.army.owner)) res.set(q, 'attack'); return false; }
+    if (walled(c, n)) { res.set(q, 'attack'); return false; }
+    res.set(q, 'move'); return true; };
+  const sail = landing => { const seen = new Set([from]); let fr = [from];
+    for (let d = 1, range = SEA_RANGE + (tech(S, n, 'N', 2) ? 1 : 0); d <= range; d++) { const next = [];
+      for (const p of fr) for (const q of NB[p]) { if (q < 0 || seen.has(q)) continue; const c = cells[q];
+        if (c.sea) { seen.add(q); prev[q] = p; if (visit(q)) next.push(q); }
+        else if (landing && c.land && !blocked(S, n, c)) { seen.add(q); prev[q] = p; visit(q); } }
+      fr = next; } };
+  if (F.land) {
+    // costs in half-steps: a normal hex costs 2, moving road-to-road costs 1
+    const base = RANGE * 2, budget = base + (tech(S, n, 'M', 3) ? 2 : 0), cost = { [from]: 0 }, open = [from], pont = tech(S, n, 'N', 1), mtn = tech(S, n, 'N', 3);
+    while (open.length) { let bi = 0; for (let k = 1; k < open.length; k++) if (cost[open[k]] < cost[open[bi]]) bi = k; const p = open.splice(bi, 1)[0];
+      for (const q of NB[p]) { if (q < 0 || q === from) continue; const c = cells[q], through = (c.t === 3 && pont) || (c.t === 2 && mtn);
+        if ((!c.land && !through) || blocked(S, n, c)) continue;
+        const nc = cost[p] + (cells[p].road && c.road ? 1 : 2); if (nc > budget || (nc > base && (c.owner !== n || (c.army && c.army.owner !== n))) || (cost[q] !== undefined && cost[q] <= nc)) continue;
+        cost[q] = nc; prev[q] = p; if (through || visit(q)) open.push(q); } }
+    if (F.port || F.wharf || (tech(S, n, 'N', 4) && NB[from].some(x => x >= 0 && cells[x].sea))) sail(false);
+  } else sail(true);
+  return { res, prev };
+}
+function pillage(S, c, n) {
+  const loot = COST[c.b] >> 1, was = c.bo; if (n >= 0 && n < 4) S.nations[n].gold += loot;
+  S.log.push(`${NATIONS[n].name} burned a ${NATIONS[was].name} ${WORK[c.b]} and carried off ${loot} gold.`); c.b = ''; c.bo = -1;
+}
+function claim(S, i, n) {
+  const c = S.cells[i], p = c.owner; if (p === n) return; c.owner = n;
+  if (c.b && c.bo !== n) pillage(S, c, n);
+  const occupy = () => { if (p >= 0) { c.unrest = tech(S, n, 'E', 3) ? Math.ceil(UNREST / 2) : UNREST; if (c.walls > 0) c.walls--; } };
+  if (c.capital >= 0 && c.capital === p && p < 4 && S.nations[p].alive) {
+    const P = S.nations[p], loot = P.gold >> 1; P.alive = false; P.gold = 0; if (n < 4) S.nations[n].gold += loot;
+    S.cells.forEach((x, j) => { if (x.bo === p) { x.b = ''; x.bo = -1; } if (j === i) return;
+      if (x.owner === p) { if (isTown(x) && x.army && x.army.owner === p) { x.owner = REBEL; x.army.owner = REBEL; x.army.moved = true; x.army.cut = false; } else { x.owner = -1; if (x.army && x.army.owner === p) x.army = null; } x.unrest = 0; }
+      else if (x.army && x.army.owner === p) x.army = null; });
+    for (let k = 0; k < 5; k++) { S.pact[p][k] = S.pact[k][p] = false; }
+    S.offers = S.offers.filter(o => o.from !== p && o.to !== p);
+    occupy(); bump(S, n, 1);
+    S.log.push(`${NATIONS[n].name} took the ${P.name} capital and looted ${loot} gold. ${P.name} has fallen; its garrisons fight on as rebels.`);
+  } else if (isTown(c)) {
+    occupy(); if (c.army && c.army.owner === n) mor(c.army, 1);
+    const what = inland(c) ? 'town' : 'port';
+    S.log.push(p >= 0 ? `${NATIONS[n].name} took a ${what} from ${NATIONS[p].name}.` : `${NATIONS[n].name} occupied a free ${what}.`);
+  }
+}
+function spread(S, i, n) {
+  for (const q of NB[i]) { if (q < 0) continue; const c = S.cells[q];
+    if (c.land && !c.army && !isSite(c) && c.owner !== n && (c.owner < 0 || hostile(S, n, c.owner))) { c.owner = n; if (c.b && c.bo !== n) pillage(S, c, n); } }
+}
+function doMove(S, from, to, frac) {
+  const cells = S.cells, A = cells[from], full = A.army; if (!full || full.moved || S.movesLeft <= 0) return null;
+  const m = movers(S, from, frac); if (m < 1) return null;
+  const { res, prev } = reachable(S, from, m); if (!res.has(to)) return null;
+  const B = cells[to], n = full.owner, ev = { n, from, to }, amp = amphib(S, from, to, n);
+  // whoever is not moving (recruits, a chosen remainder, an automatic garrison) stays behind as the army on this hex
+  let a = full, stay = null;
+  if (m < full.count) { a = { owner: n, count: m, morale: full.morale, moved: false, fresh: 0, cut: full.cut }; full.count -= m; full.fresh = Math.min(full.fresh || 0, full.count); stay = full; ev.left = full.count; }
+  for (let p = prev[to]; p !== from; p = prev[p]) if (cells[p].land && !cells[p].army) claim(S, p, n);
+  // decide after the path is claimed: a capital taken on the way can change what stands on the target
+  const type = B.army ? (B.army.owner === n ? (B.army.count + a.count <= CAP ? 'merge' : 'halt') : 'attack') : (walled(B, n) ? 'attack' : 'move');
+  ev.type = type;
+  if (type === 'halt') { if (stay) full.count += m; full.moved = true; }
+  else if (type === 'merge') {
+    B.army.morale = Math.round((B.army.count * B.army.morale + a.count * a.morale) / (B.army.count + a.count)); B.army.count += a.count; B.army.moved = true; A.army = stay;
+  } else if (type === 'attack') {
+    const d = defender(S, to), aP = atk(S, a) * (0.9 + 0.2 * S.rng()), dP = (power(d) + defBonus(S, to, n) + amp) * (0.9 + 0.2 * S.rng());
+    A.army = stay;
+    if (aP > dP) {
+      a.count = Math.max(1, Math.round(a.count * (1 - 0.7 * dP / aP))); if (!d.militia && d.count >= 8) mor(a, 1); a.moved = true; a.cut = false;
+      B.army = a; ev.win = true;
+      if (d.militia) S.log.push(`${NATIONS[n].name} stormed the walls of a ${NATIONS[d.owner].name} town.`);
+      else S.log.push(`${NATIONS[n].name} destroyed a ${NATIONS[d.owner].name} ${B.sea ? 'fleet' : 'army'} of ${d.count}.`);
+      if (B.land) { claim(S, to, n); spread(S, to, n); }
+    } else {
+      ev.win = false;
+      if (d.militia) S.log.push(`The walls of a ${NATIONS[d.owner].name} town threw back a ${NATIONS[n].name} assault.`);
+      else { const before = d.count; d.count = Math.max(1, Math.round(d.count * (1 - 0.7 * aP / dP))); if (a.count >= 8) mor(d, 1);
+        S.log.push(`${NATIONS[d.owner].name} repelled a ${NATIONS[n].name} attack (lost ${before - d.count}).`); }
+    }
+  } else { A.army = stay; B.army = a; a.moved = true; a.cut = false; if (B.land) { claim(S, to, n); spread(S, to, n); } }
+  // an army ending its move beside (or, for ships, on) an enemy mill, mine or fishery burns it
+  const at = B.army === a ? to : type === 'halt' ? from : -1;
+  if (at >= 0) for (const q of [at, ...NB[at]]) { if (q < 0) continue; const c = cells[q]; if (c.b && !c.land && c.bo !== n && hostile(S, n, c.bo)) pillage(S, c, n); }
+  S.movesLeft--;
+  const alive = S.nations.filter(x => x.alive); if (alive.length === 1) S.winner = alive[0].id;
+  return ev;
+}
+
+// ---- spending ----
+function recruit(S, n, i, k) {
+  const c = S.cells[i], N = S.nations[n]; if (c.owner !== n || !isTown(c) || c.unrest || (c.army && c.army.owner !== n)) return 0;
+  k = Math.min(k, N.gold, CAP - (c.army ? c.army.count : 0)); if (k < 1) return 0; N.gold -= k;
+  const m = tech(S, n, 'M', 1) ? 4 : 3;
+  if (!c.army) c.army = { owner: n, count: k, morale: m, moved: false, cut: false, fresh: k };
+  else { c.army.morale = Math.round((c.army.count * c.army.morale + k * m) / (c.army.count + k)); c.army.count += k; c.army.fresh = (c.army.fresh || 0) + k; }
+  return k;
+}
+function buildCost(S, n, i, what) {
+  const c = S.cells[i], mine = c.owner === n && c.land && !c.unrest;
+  if (what === 'walls') return mine && isTown(c) && c.walls < 3 ? price(S, n, COST.walls[c.walls]) : -1;
+  if (what === 'shop') return mine && isTown(c) && c.shop < 2 ? COST.shop[c.shop] : -1;
+  if (what === 'road') return mine && !c.road ? price(S, n, COST.road) : -1;
+  if (what === 'tower') return mine && !isSite(c) && !c.bridge && !c.b && !c.wharf ? price(S, n, COST.tower) : -1;
+  if (what === 'wharf') return mine && !isSite(c) && !c.wharf && !c.bridge && !c.b && NB[i].some(x => x >= 0 && S.cells[x].sea) ? price(S, n, COST.wharf) : -1;
+  const touch = NB[i].some(x => x >= 0 && S.cells[x].land && S.cells[x].owner === n), lone = k => !NB[i].some(x => x >= 0 && S.cells[x].b === k);
+  if (what === 'bridge') return c.t === 3 && !c.b && touch ? price(S, n, COST.bridge) : -1;
+  if (what === 'farm') return mine && !isSite(c) && !c.bridge && !c.b && !c.wharf && S.cells.some((t, j) => t.owner === n && isTown(t) && hexDist(i, j) <= 2) ? price(S, n, COST.farm) : -1;
+  if (what === 'mill') return c.t === 3 && !c.b && touch && lone('mill') ? price(S, n, COST.mill) : -1;
+  if (what === 'mine') return c.t === 2 && c.ore && !c.b && touch ? price(S, n, COST.mine) : -1;
+  if (what === 'fish') return c.sea && !c.b && touch && lone('fish') ? price(S, n, COST.fish) : -1;
+  return -1;
+}
+function build(S, n, i, what) {
+  const cost = buildCost(S, n, i, what), N = S.nations[n], c = S.cells[i]; if (cost < 0 || N.gold < cost) return false; N.gold -= cost;
+  if (what === 'walls') c.walls++; else if (what === 'shop') c.shop++; else if (what === 'road') c.road = true; else if (what === 'tower') c.tower = true; else if (what === 'wharf') c.wharf = true;
+  else if (WORK[what]) { c.b = what; c.bo = n; }
+  else { setT(c, 0); c.bridge = true; c.owner = n; }
+  return true;
+}
+function research(S, n, b, k) {
+  const N = S.nations[n]; if (N.tech[b][k] || N.researched || N.gold < techCost(N, b)) return false;
+  N.gold -= techCost(N, b); N.tech[b][k] = true; N.researched = true; S.log.push(`${N.name} developed ${TECH[b][k].name}.`); return true;
+}
+
+// ---- AI ----
+// travel cost to the nearest objective, in thirds of a land step (land step 3, sea step 2, embarking +4)
+function objectiveDist(S, n, capOnly) {
+  const dist = new Array(W * H).fill(999), q = [];
+  S.cells.forEach((c, i) => {
+    if (!c.land && !c.sea) return;
+    const enemyArmy = c.army && c.army.owner !== n && hostile(S, n, c.army.owner);
+    const enemyOwned = c.land && c.owner >= 0 && c.owner !== n && hostile(S, n, c.owner);
+    const hit = capOnly !== undefined && capOnly !== false ? (enemyOwned && ownCapital(S, c) && (capOnly === true || capOnly === c.owner)) : (enemyArmy || (c.land && isSite(c) && !c.tower && (c.owner < 0 || enemyOwned)));
+    if (hit) { dist[i] = 0; q.push(i); }
+  });
+  for (let h = 0; h < q.length; h++) { const x = q[h], X = S.cells[x];
+    for (const p of NB[x]) { if (p < 0) continue; const P = S.cells[p];
+      if (!(P.land || P.sea) || blocked(S, n, P)) continue;
+      let cost; if (X.land) cost = P.land ? 3 : 2; else if (P.sea) cost = 2; else if (P.port || P.wharf) cost = 6; else continue;
+      if (dist[x] + cost < dist[p]) { dist[p] = dist[x] + cost; q.push(p); } } }
+  return dist;
+}
+const mobileFoe = (S, n, c) => c.army && c.army.owner !== n && c.army.owner < 4 && hostile(S, n, c.army.owner);
+function enemyPowerNear(S, n, i, r) {
+  let m = 0; S.cells.forEach((c, j) => { if (j !== i && mobileFoe(S, n, c) && hexDist(i, j) <= r) m = Math.max(m, power(c.army)); });
+  return m;
+}
+// Standard AI: fixed thresholds, nearest objective
+function aiPick(S, n) {
+  const dist = objectiveDist(S, n), capI = S.nations[n].cap, capThreat = enemyPowerNear(S, n, capI, 4) > 0;
+  const besiegers = []; S.cells.forEach((c, j) => { if (mobileFoe(S, n, c) && hexDist(capI, j) <= 3) besiegers.push(j); });
+  const bold = strengths(S)[n] > 0.5, capDist = objectiveDist(S, n, true);
+  let need = 0; S.cells.forEach((c, j) => { if (c.army && c.army.owner !== n && hostile(S, n, c.army.owner) && c.land && isTown(c)) need = Math.max(need, power(c.army) + defBonus(S, j, n)); });
+  let best = null, bs = 0.5;
+  S.cells.forEach((cell, i) => {
+    const full = cell.army; if (!full || full.owner !== n || full.moved) return; const mv = movers(S, i); if (mv < 1) return;
+    const a = mv === full.count ? full : { ...full, count: mv };
+    const { res } = reachable(S, i), myP = power(a);
+    for (const [t, type] of res) {
+      const tc = S.cells[t]; let s = 0, after = myP, sortie = false;
+      if (type === 'attack') {
+        const d = defender(S, t), dP = power(d) + defBonus(S, t, n) + amphib(S, i, t, n), ratio = atk(S, a) / dP;
+        const isCap = tc.land && ownCapital(S, tc);
+        sortie = ratio >= 1.2 && besiegers.length === 1 && besiegers[0] === t;
+        if (ratio < (isCap ? 1.1 : 1.2)) {
+          if (ratio < 0.5 || S.movesLeft < 2 || d.militia) continue;
+          let sum = 0; S.cells.forEach((c, j) => { if (c.army && c.army.owner === n && !c.army.moved && hexDist(j, t) <= RANGE) sum += power(c.army); });
+          if (sum < dP * 1.4) continue;
+          s = 6 + (isTown(tc) ? 12 : 0) + (isCap ? 150 : 0) + a.count * 0.05; after = 1e9;
+        } else {
+          s = 10 + d.count * 0.6 + (tc.land && isTown(tc) ? 25 : 0) + (isCap ? 300 : 0); after = myP * (1 - 0.7 / ratio);
+          if (isCap) after = 1e9;
+        }
+      } else if (type === 'merge') {
+        const b = tc.army; const mass = Math.max(myP, power(b)) < need * 1.2;
+        if (a.count >= 12 && b.count >= 12 && !mass && !(t === capI && capThreat)) continue;
+        const near = dist[t] <= 9;
+        s = mass && near && dist[t] <= dist[i] ? 9 + (a.count + b.count) * 0.05 : dist[t] < dist[i] ? (near ? 3 : 1) : (a.count < 8 && dist[t] <= dist[i] ? 0.8 : 0);
+        if (!near && dist[i] > 9 && a.count < 40 && dist[t] <= dist[i]) s = Math.max(s, 2.5);
+        if (t === capI && capThreat) s += 20;
+      } else {
+        if (tc.land) {
+          let gain = tc.owner === n ? 0 : 1;
+          for (const q of NB[t]) { if (q < 0) continue; const c = S.cells[q]; if (c.land && !c.army && !isSite(c) && c.owner !== n && (c.owner < 0 || hostile(S, n, c.owner))) gain++; }
+          s = gain * 0.9;
+          if (isTown(tc) && tc.owner !== n) { const isCap = ownCapital(S, tc); s += 30 + (isCap ? 300 : 0); if (isCap) after = 1e9; }
+          else if (tc.port && tc.owner !== n) s += 6;
+        }
+        s += (dist[i] - dist[t]) * 0.67 * Math.min(2, a.count / 8);
+        if (a.count >= 15 && capDist[i] < 999) s += (capDist[i] - capDist[t]) * (bold ? 1 : 0.5) * Math.min(3, a.count / 15);
+      }
+      if (type !== 'merge' && !bold && enemyPowerNear(S, n, t, 2) > after * 1.15) s -= 12;
+      if (cell.unrest > 0 && mv === full.count) s -= 8;
+      if (i === capI) { if (sortie) s += 15; else if (besiegers.length) s -= 1000; else s += a.count >= 20 ? 3 : -2; }
+      if (s > bs) { bs = s; best = { from: i, to: t }; }
+    }
+  });
+  return best;
+}
+// Veteran AI: expected-value attacks, one war aim at a time, real threat checks on the capital
+const AI_P = { cap: 0.6, capMin: 12, mergeK: 0, danger: 15, gain: 0.9, town: 30, appr: 0.67, lose: 0.8, garr: 15 };
+function aiPick2(S, n) {
+  const P = (S.params && S.params[n]) || AI_P;
+  const dist = objectiveDist(S, n), capI = S.nations[n].cap, sh = strengths(S), bold = sh[n] > 0.5, cells = S.cells;
+  let target = -1, tv = -1, capDist = null;
+  for (let m = 0; m < 4; m++) { if (!S.nations[m].alive || !hostile(S, n, m)) continue; const f = objectiveDist(S, n, m); if (f[capI] >= 999) continue;
+    const v = (sh[n] / Math.max(0.03, sh[m])) / (1 + f[capI] / 30); if (v > tv) { tv = v; target = m; capDist = f; } }
+  const besiegers = [], threats = new Set(); let threatSum = 0;
+  cells.forEach((c, j) => { if (!mobileFoe(S, n, c)) return;
+    if (hexDist(capI, j) <= 3) besiegers.push(j);
+    if (hexDist(capI, j) <= 4 && reachable(S, j).res.has(capI)) { threats.add(j); threatSum += power(c.army); } });
+  const g = cells[capI].army, capWeak = threats.size > 0 && (g ? power(g) : 0) + defBonus(S, capI) < threatSum * 0.9;
+  let need = 0; cells.forEach((c, j) => { if (c.army && c.army.owner !== n && hostile(S, n, c.army.owner) && c.land && isTown(c)) need = Math.max(need, power(c.army) + defBonus(S, j, n)); });
+  let best = null, bs = 0.5;
+  cells.forEach((cell, i) => {
+    const full = cell.army; if (!full || full.owner !== n || full.moved) return; const mv = movers(S, i); if (mv < 1) return;
+    const a = mv === full.count ? full : { ...full, count: mv };
+    const { res } = reachable(S, i), myP = power(a);
+    for (const [t, type] of res) {
+      const tc = cells[t]; let s = 0, after = myP, sortie = false, big = false;
+      if (type === 'attack') {
+        const d = defender(S, t), dP = power(d) + defBonus(S, t, n) + amphib(S, i, t, n), r = atk(S, a) / dP, p = Math.max(0, Math.min(1, (r - 0.84) / 0.36));
+        const isCap = tc.land && ownCapital(S, tc);
+        const win = 6 + d.count * 0.8 + (tc.land && isTown(tc) ? 25 : 0) + (isCap ? 400 : 0) + (threats.has(t) ? 30 : besiegers.includes(t) ? 12 : 0) + (d.owner === target ? 4 : 0);
+        const lose = -a.count * P.lose + (d.militia ? 0 : Math.min(d.count, 0.7 * r * d.count) * 0.4);
+        s = p * (win - a.count * 0.35 / Math.max(r, 1)) + (1 - p) * lose;
+        if (p < 0.6 && win >= 25 && S.movesLeft >= 2 && !d.militia) {     // siege: soften now if a second army can finish
+          const left = (dP - power(d)) + power(d) * (1 - 0.7 * Math.min(1, r)); let fin = 0;
+          cells.forEach((c, j) => { if (j !== i && c.army && c.army.owner === n && !c.army.moved && hexDist(j, t) <= RANGE) fin = Math.max(fin, power(c.army)); });
+          if (r >= 0.4 && fin >= left * 1.25) s = Math.max(s, win * 0.6 - a.count * 0.5);
+        }
+        after = myP * Math.max(0.2, 1 - 0.7 / Math.max(r, 1)); big = isCap;
+        sortie = p >= 0.8 && besiegers.length === 1 && besiegers[0] === t;
+      } else if (type === 'merge') {
+        const b = tc.army, mass = Math.max(myP, power(b)) < need * 1.2, near = dist[t] <= 9;
+        if (a.count >= 12 && b.count >= 12 && !mass && !P.mergeK && !(t === capI && capWeak)) continue;
+        s = mass && near && dist[t] <= dist[i] ? 9 + (a.count + b.count) * 0.05 : dist[t] < dist[i] ? (near ? 3 : 1) : (a.count < 8 && dist[t] <= dist[i] ? 0.8 : 0);
+        if (!near && dist[i] > 9 && a.count < 40 && dist[t] <= dist[i]) s = Math.max(s, 2.5);
+        if (P.mergeK && near && dist[t] <= dist[i]) s = Math.max(s, 2 + Math.min(a.count, b.count) * P.mergeK);
+        if (t === capI && capWeak) s += 25 + a.count * 0.2;
+      } else {
+        if (tc.land) {
+          let gain = tc.owner === n ? 0 : 1;
+          for (const q of NB[t]) { if (q < 0) continue; const c = cells[q]; if (c.land && !c.army && !isSite(c) && c.owner !== n && (c.owner < 0 || hostile(S, n, c.owner))) gain++; }
+          s = gain * P.gain;
+          if (isTown(tc) && tc.owner !== n) { big = ownCapital(S, tc); s += P.town + (big ? 400 : 0); }
+          else if (tc.port && tc.owner !== n) s += 6;
+        }
+        s += (dist[i] - dist[t]) * P.appr * Math.min(2, a.count / 8);
+        if (capDist && a.count >= P.capMin && capDist[i] < 999) s += (capDist[i] - capDist[t]) * (bold ? Math.max(1, P.cap) : P.cap) * Math.min(3, a.count / 15);
+      }
+      if (type !== 'merge' && !big) { const th = enemyPowerNear(S, n, t, 2); if (th > (after + defBonus(S, t)) * 1.1) s -= Math.min(bold ? 6 : P.danger, a.count * 0.5); }
+      if (cell.unrest > 0 && mv === full.count) s -= 8;      // someone has to hold a restless town, unless a garrison stays automatically
+      if (i === capI) { if (sortie) s += 20; else if (besiegers.length) s -= 1000; else s += a.count >= P.garr ? 3 : -2; }
+      if (s > bs) { bs = s; best = { from: i, to: t }; }
+    }
+  });
+  return best;
+}
+const pickFor = (S, n) => (S.ai[n] === 1 ? aiPick : aiPick2)(S, n);
+// AI budget: part of each turn's income goes into an investment fund, the rest becomes troops at the town nearest the front
+function aiEconomy(S, n) {
+  const N = S.nations[n], cells = S.cells, capI = N.cap, inc = income(S, n);
+  if (S.noInvest && S.noInvest[n]) { N.fund = 0; }
+  else {
+    const capDanger = enemyPowerNear(S, n, capI, 4) > 0;
+    N.fund = Math.min(N.gold, capDanger ? 0 : N.fund + Math.round(inc.gold * 0.4));
+    // score every possible investment by gold returned per gold spent, then buy the best one or save toward it
+    const opts = [], only = S.only && S.only[n], add = (kind, score, cost, fn) => { if (cost >= 0 && (!only || only.includes(kind))) opts.push({ score, cost, fn }); };
+    const safe = i => enemyPowerNear(S, n, i, 4) === 0, pS = inc.perShop, ctx = ecoCtx(S, n);
+    cells.forEach((c, i) => {
+      if (c.owner === n && isTown(c) && !c.unrest) {
+        if (safe(i)) { const link = cells.filter((x, j) => x.b === 'mine' && x.bo === n && ctx.linked(j, i) && !ctx.shops.some(t => ctx.linked(j, t))).length * 2;
+          add('shop', (pS + (c.shop ? 0 : link)) / COST.shop[Math.min(1, c.shop)], buildCost(S, n, i, 'shop'), () => build(S, n, i, 'shop')); }
+        else if (c.walls < 2) add('walls', 0.2 - c.walls * 0.07, buildCost(S, n, i, 'walls'), () => build(S, n, i, 'walls')); }
+      if (c.t === 2 && c.ore) add('mine', yieldAt(ctx, i, 'mine') / COST.mine, buildCost(S, n, i, 'mine'), () => build(S, n, i, 'mine'));
+      else if (c.sea) { const k = buildCost(S, n, i, 'fish'); if (k >= 0 && safe(i)) add('fish', yieldAt(ctx, i, 'fish') / COST.fish, k, () => build(S, n, i, 'fish')); }
+      else if (c.t === 3) { const k = buildCost(S, n, i, 'mill'); if (k >= 0) { let f = 0; cells.forEach((x, j) => { if (x.owner === n && hexDist(i, j) <= LINK && (x.b === 'farm' || buildCost(S, n, j, 'farm') >= 0) && !ctx.mills.some(m => ctx.linked(j, m))) f++; }); if (f >= 1) add('mill', (yieldAt(ctx, i, 'mill') + f * 0.6) / COST.mill, k, () => build(S, n, i, 'mill')); } }
+      else if (c.land && c.owner === n) { const k = buildCost(S, n, i, 'farm'); if (k >= 0 && safe(i)) add('farm', yieldAt(ctx, i, 'farm') / COST.farm, k, () => build(S, n, i, 'farm')); }
+    });
+    const worth = { M: [3, 3.5, 4, 4], E: [Math.max(3, inc.towns), 2 + inc.w.farm * 0.2, 4.5, Math.max(2, inc.shops * 3)], N: [1.5 + inc.w.mill, 2 + inc.w.fish, 1.5 + inc.w.mine, 1.5 + inc.ports * 2] };
+    for (const b of 'MEN') for (let k = 0; k < 4; k++) if (!N.tech[b][k]) add('tech' + b, worth[b][k] * (b === N.bent ? 1.3 : 1) / techCost(N, b), techCost(N, b), () => research(S, n, b, k));
+    if (!capDanger && opts.length) { const o = opts.reduce((m, x) => x.score > m.score ? x : m); if (N.fund >= o.cost && o.fn()) N.fund -= o.cost; }
+    N.fund = Math.min(N.fund, N.gold);
+  }
+  const dist = objectiveDist(S, n); const spots = []; cells.forEach((c, i) => { if (c.owner === n && isTown(c) && !c.unrest && (!c.army || c.army.owner === n)) spots.push(i); });
+  const capHot = enemyPowerNear(S, n, capI, 4) > 0;
+  spots.sort((a, b) => (capHot ? (a === capI ? -1 : b === capI ? 1 : 0) : 0) || dist[a] - dist[b]);
+  for (const i of spots) { const spend = N.gold - N.fund; if (spend < 1) break; recruit(S, n, i, spend); }
+}
+function strengths(S) {
+  const s = [0, 0, 0, 0, 0];
+  for (const c of S.cells) { if (c.army) s[c.army.owner] += power(c.army); if (c.land && c.owner >= 0 && isTown(c)) s[c.owner] += 6; }
+  const tot = s[0] + s[1] + s[2] + s[3] || 1; return s.slice(0, 4).map(x => x / tot);
+}
+function wantsPeace(S, n, m, sh) {
+  if (n === m || !S.nations[n].alive || !S.nations[m].alive || S.round < S.noPact[n][m]) return false;
+  for (let L = 0; L < 4; L++) if (L !== n && L !== m && S.nations[L].alive && sh[L] > 0.36 && sh[L] > sh[n] * 1.25 && sh[L] > sh[m]) return true;
+  return sh[n] < 0.15 && sh[m] < 0.4 && S.nations.filter(x => x.alive).length > 2;
+}
+function wantsBreak(S, n, m, sh) {
+  const others = S.nations.filter(x => x.alive && x.id !== n && x.id !== m && !S.pact[n][x.id]);
+  return others.length === 0 || sh[m] > 0.45 || sh[n] > 0.5;
+}
+function setPact(S, a, b, v) { S.pact[a][b] = S.pact[b][a] = v; if (!v) S.noPact[a][b] = S.noPact[b][a] = S.round + 6; }
+function aiDiplomacy(S, n) {
+  const sh = strengths(S);
+  for (let m = 0; m < 4; m++) {
+    if (m === n || !S.nations[m].alive || S.pact[n][m] || !wantsPeace(S, n, m, sh)) continue;
+    if (S.nations[m].human) { if (S.rng() < 0.4 && !S.offers.some(o => o.from === n && o.to === m)) S.offers.push({ from: n, to: m }); }
+    else if (wantsPeace(S, m, n, sh) && S.rng() < 0.5) { setPact(S, n, m, true); S.log.push(`${S.nations[n].name} and ${S.nations[m].name} signed a peace pact.`); }
+  }
+}
+function aiEndDiplomacy(S, n) {
+  const sh = strengths(S);
+  for (let m = 0; m < 4; m++) if (S.pact[n][m] && wantsBreak(S, n, m, sh)) { setPact(S, n, m, false); S.log.push(`${S.nations[n].name} broke its pact with ${S.nations[m].name}.`); }
+  if (!S.pact[n].some(Boolean)) return;
+  const dist = objectiveDist(S, n); let any = false, boxed = true;
+  S.cells.forEach((c, i) => { if (c.army && c.army.owner === n) { any = true; if (dist[i] < 999) boxed = false; } });
+  if (!any || !boxed) return;
+  for (let m = 0; m < 4; m++) { if (!S.pact[n][m]) continue;
+    const touching = S.cells.some((c, i) => c.land && c.owner === n && NB[i].some(q => q >= 0 && S.cells[q].owner === m));
+    if (touching) { setPact(S, n, m, false); S.log.push(`${S.nations[n].name} has nowhere left to expand and broke its pact with ${S.nations[m].name}.`); } }
+}
+function aiTurnAll(S) { const n = S.cur; aiDiplomacy(S, n); aiEconomy(S, n); while (S.movesLeft > 0 && S.winner < 0) { const m = pickFor(S, n); if (!m) break; doMove(S, m.from, m.to); } if (S.winner < 0) aiEndDiplomacy(S, n); }
+// ===LOGIC-END===
+
+// ---- UI ----
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+let frac = 1; let S, sel = -1, reach = null, hover = -1, focus = -1, last = null, size = 20, busy = false, humanId = 0, timer = null;
+const R3 = Math.sqrt(3), RAD = Math.PI / 180;
+const center = i => { const c = i % W, r = (i / W) | 0; return [R3 * size * (c + 0.5 * (r & 1)) + R3 * size / 2, 1.5 * size * r + size]; };
+function layout() {
+  const hd = document.querySelector('header'); if (hd && hd.offsetHeight) document.body.style.setProperty('--headh', (hd.offsetHeight + 6) + 'px');
+  const wrap = cv.parentElement, dpr = window.devicePixelRatio || 1, tall = window.innerWidth > 900;
+  cv.style.width = cv.style.height = '0px';                      // let the wrapper settle before measuring it
+  const pad = document.body.classList.contains('max') ? 4 : 16, aw = wrap.clientWidth - pad, ah = tall ? wrap.clientHeight - pad : Infinity;
+  size = Math.max(6, Math.min(aw / (R3 * (W + 0.5)), ah / (1.5 * (H - 1) + 2)));
+  const cw = R3 * size * (W + 0.5), ch = 1.5 * size * (H - 1) + 2 * size;
+  cv.style.width = cw + 'px'; cv.style.height = ch + 'px'; cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function hexPath(x, y, s) { ctx.beginPath(); for (let k = 0; k < 6; k++) { const a = RAD * (60 * k - 30); ctx[k ? 'lineTo' : 'moveTo'](x + s * Math.cos(a), y + s * Math.sin(a)); } ctx.closePath(); }
+const EDGE = [-30, -90, -150, 150, 90, 30];
+function drawSite(c, x, y, s) {
+  ctx.save(); ctx.translate(x, y); ctx.lineWidth = 1.2; ctx.strokeStyle = '#1a1a1a';
+  if (c.capital >= 0) { ctx.fillStyle = '#f4d35e'; ctx.beginPath(); for (let k = 0; k < 10; k++) { const r = k % 2 ? s * 0.45 : s; const a = Math.PI / 5 * k - Math.PI / 2; ctx.lineTo(r * Math.cos(a), r * Math.sin(a)); } ctx.closePath(); ctx.fill(); ctx.stroke(); }
+  else if (c.town) { ctx.fillStyle = '#f3efe2'; ctx.beginPath(); ctx.moveTo(-s * .8, s * .8); ctx.lineTo(-s * .8, -s * .1); ctx.lineTo(0, -s * .9); ctx.lineTo(s * .8, -s * .1); ctx.lineTo(s * .8, s * .8); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+  else if (c.tower) { ctx.fillStyle = '#4a4338'; ctx.beginPath(); ctx.rect(-s * .5, -s * .5, s, s * 1.4); ctx.rect(-s * .75, -s * .95, s * 1.5, s * .5); ctx.fill(); ctx.stroke(); }
+  if (c.wharf) { ctx.fillStyle = '#7a5630'; ctx.beginPath(); ctx.rect(-s * 0.9, -s * 0.25, s * 1.8, s * 0.5); ctx.rect(-s * 0.25, -s * 0.25, s * 0.5, s * 1.3); ctx.fill(); ctx.stroke(); }
+  if (c.port) { const ox = inland(c) ? s * 1.5 : 0, r = inland(c) ? s * 0.75 : s * 0.95; ctx.beginPath(); ctx.arc(ox, 0, r, 0, 7); ctx.fillStyle = '#1f4e79'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = `${r * 1.45}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('⚓', ox, r * 0.08); }
+  ctx.restore();
+}
+function render() {
+  const w = cv.clientWidth, h = cv.clientHeight; ctx.clearRect(0, 0, w, h);
+  const incs = S.nations.map(n => n.alive ? income(S, n.id) : null);
+  ctx.lineCap = 'round';
+  S.cells.forEach((c, i) => { const [x, y] = center(i);
+    hexPath(x, y, size);
+    ctx.fillStyle = c.sea ? '#2f5f85' : c.t === 2 ? '#9a917c' : c.t === 3 ? '#cfc7a3' : c.owner < 0 ? '#d8cfab' : NATIONS[c.owner].light; ctx.fill();
+    ctx.strokeStyle = c.sea ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.13)'; ctx.lineWidth = 1; ctx.stroke();
+    if (c.t === 2) { ctx.fillStyle = '#6a6354'; for (const [ox, sc] of [[-0.3, 0.55], [0.25, 0.75]]) { ctx.beginPath(); ctx.moveTo(x + (ox - sc * 0.6) * size, y + size * 0.45); ctx.lineTo(x + ox * size, y + size * (0.45 - sc)); ctx.lineTo(x + (ox + sc * 0.6) * size, y + size * 0.45); ctx.closePath(); ctx.fill(); }
+      ctx.fillStyle = '#f2efe6'; ctx.beginPath(); ctx.moveTo(x + 0.25 * size, y - 0.3 * size); ctx.lineTo(x + 0.13 * size, y - 0.1 * size); ctx.lineTo(x + 0.37 * size, y - 0.1 * size); ctx.closePath(); ctx.fill(); }
+    if (c.down >= 0) { ctx.strokeStyle = '#3f7fb0'; ctx.lineWidth = size * 0.42; let ups = 0;
+      // draw only along the flow: toward where this hex drains, and toward each hex that drains into it
+      NB[i].forEach((q, d) => { if (q < 0) return; const o = S.cells[q]; const flows = q === c.down || o.down === i; if (!flows) return; if (o.down === i) ups++;
+        const a = (EDGE[d] + 30) * RAD; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + size * 0.87 * Math.cos(a), y + size * 0.87 * Math.sin(a)); ctx.stroke(); });
+      if (!ups) { ctx.beginPath(); ctx.arc(x, y, size * 0.26, 0, 7); ctx.fillStyle = '#3f7fb0'; ctx.fill(); }
+      if (c.bridge) { ctx.fillStyle = '#7a5630'; ctx.strokeStyle = '#2b1d0e'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.rect(x - size * 0.55, y - size * 0.2, size * 1.1, size * 0.4); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); for (let k = -2; k <= 2; k++) { ctx.moveTo(x + k * size * 0.18, y - size * 0.2); ctx.lineTo(x + k * size * 0.18, y + size * 0.2); } ctx.stroke(); } }
+    if (c.road) { ctx.strokeStyle = '#8a6a3c'; ctx.lineWidth = size * 0.16; let links = 0;
+      NB[i].forEach((q, d) => { if (q < 0 || !S.cells[q].road) return; links++; const a = (EDGE[d] + 30) * RAD; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + size * 0.87 * Math.cos(a), y + size * 0.87 * Math.sin(a)); ctx.stroke(); });
+      if (!links) { ctx.beginPath(); ctx.arc(x, y, size * 0.16, 0, 7); ctx.fillStyle = '#8a6a3c'; ctx.fill(); } }
+    if (c.ore && !c.b) { ctx.fillStyle = '#f0c040'; ctx.strokeStyle = '#3a2c00'; ctx.lineWidth = 1; for (const [ox, oy] of [[-0.45, 0.6], [-0.2, 0.68], [0.05, 0.6]]) { ctx.beginPath(); ctx.arc(x + ox * size, y + oy * size, size * 0.09, 0, 7); ctx.fill(); ctx.stroke(); } }
+    if (c.b) { const col = NATIONS[c.bo].color, u = size; ctx.lineWidth = 2; ctx.strokeStyle = col;
+      if (c.b === 'farm') { const fy = y + (c.army ? u * 0.62 : u * 0.1); ctx.fillStyle = '#e9d27a'; ctx.beginPath(); ctx.rect(x - u * 0.42, fy - u * 0.2, u * 0.84, u * 0.4); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = '#8a7420'; ctx.lineWidth = 1; ctx.beginPath(); for (let k = -1; k <= 1; k++) { ctx.moveTo(x - u * 0.36, fy + k * u * 0.1); ctx.lineTo(x + u * 0.36, fy + k * u * 0.1); } ctx.stroke(); }
+      else if (c.b === 'mill') { ctx.fillStyle = '#f3efe2'; ctx.beginPath(); ctx.arc(x, y, u * 0.34, 0, 7); ctx.fill(); ctx.stroke(); ctx.strokeStyle = '#5a4020'; ctx.lineWidth = 1.5; ctx.beginPath(); for (let k = 0; k < 4; k++) { const a = k * Math.PI / 4; ctx.moveTo(x - u * 0.3 * Math.cos(a), y - u * 0.3 * Math.sin(a)); ctx.lineTo(x + u * 0.3 * Math.cos(a), y + u * 0.3 * Math.sin(a)); } ctx.stroke(); }
+      else if (c.b === 'mine') { ctx.fillStyle = '#1b1712'; ctx.beginPath(); ctx.arc(x - u * 0.2, y + u * 0.62, u * 0.3, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#f0c040'; ctx.beginPath(); ctx.arc(x - u * 0.2, y + u * 0.5, u * 0.09, 0, 7); ctx.fill(); }
+      else { ctx.fillStyle = '#f3efe2'; ctx.beginPath(); ctx.ellipse(x - u * 0.06, y + u * 0.45, u * 0.3, u * 0.16, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x + u * 0.2, y + u * 0.45); ctx.lineTo(x + u * 0.44, y + u * 0.3); ctx.lineTo(x + u * 0.44, y + u * 0.6); ctx.closePath(); ctx.fill(); ctx.stroke(); } }
+  });
+  S.cells.forEach((c, i) => { if (!c.land) return; const [x, y] = center(i);
+    NB[i].forEach((q, d) => { const o = q < 0 || !S.cells[q].land ? -2 : S.cells[q].owner; if (o === c.owner) return;
+      const a0 = EDGE[d] * RAD, a1 = (EDGE[d] + 60) * RAD, s = size * 0.93;
+      ctx.beginPath(); ctx.moveTo(x + s * Math.cos(a0), y + s * Math.sin(a0)); ctx.lineTo(x + s * Math.cos(a1), y + s * Math.sin(a1));
+      ctx.strokeStyle = c.owner < 0 ? 'rgba(60,50,30,.35)' : NATIONS[c.owner].color; ctx.lineWidth = c.owner < 0 ? 1 : Math.max(2, size * 0.13); ctx.stroke(); });
+    if (c.walls) { hexPath(x, y, size * 0.78); ctx.strokeStyle = '#3b352b'; ctx.lineWidth = 1 + c.walls * 1.3; ctx.setLineDash([size * 0.3, size * 0.12]); ctx.stroke(); ctx.setLineDash([]); } });
+  if (reach) for (const [t, type] of reach.res) { const [x, y] = center(t); hexPath(x, y, size * 0.9);
+    ctx.fillStyle = type === 'attack' ? 'rgba(220,40,40,.5)' : type === 'merge' ? 'rgba(40,160,80,.5)' : 'rgba(255,255,255,.5)'; ctx.fill(); }
+  if (focus >= 0) { const [x, y] = center(focus); hexPath(x, y, size * 0.96); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]); }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  S.cells.forEach((c, i) => { if (!c.land || !(isSite(c) || c.wharf)) return; const [x, y] = center(i), both = inland(c) && c.port;
+    if (c.wharf && !isSite(c)) { drawSite(c, x + size * 0.45, y + size * 0.5, size * 0.2); return; }
+    if (c.army) drawSite(c, x - (both ? size * 0.18 : 0), y - size * 0.7, size * 0.24); else drawSite(c, x - (both ? size * 0.25 : 0), y - size * 0.08, size * 0.38);
+    if (isTown(c)) { const inc = c.owner >= 0 && c.owner < 4 ? incs[c.owner] : null;
+      const yv = c.unrest ? 0 : (inc ? (c.capital === c.owner ? CAP_BASE + inc.bonus : inc.perTown) + c.shop * inc.perShop : TOWN_YIELD);
+      ctx.font = `700 ${size * 0.3}px system-ui, sans-serif`; ctx.fillStyle = c.unrest ? '#a01818' : '#5a3d00'; ctx.fillText(c.unrest ? `unrest ${c.unrest}` : `+${yv}g`, x, y + size * (c.army ? 0.84 : 0.62));
+      for (let k = 0; k < c.shop; k++) { ctx.fillStyle = '#d9772b'; ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.rect(x - size * 0.78 + k * size * 0.22, y - size * 0.1, size * 0.17, size * 0.17); ctx.fill(); ctx.stroke(); } } });
+  if (last) { const [x1, y1] = center(last.from), [x2, y2] = center(last.to); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.strokeStyle = 'rgba(20,20,20,.55)'; ctx.lineWidth = 3; ctx.setLineDash([5, 5]); ctx.stroke(); ctx.setLineDash([]); }
+  S.cells.forEach((c, i) => { const a = c.army; if (!a) return; const [x, y] = center(i), r = size * 0.56, cy = y + (c.sea ? -size * 0.08 : size * 0.04);
+    ctx.globalAlpha = (a.owner === humanId && (a.moved || vets(a) < 1) && S.cur === humanId) ? 0.6 : 1;
+    if (c.sea) { ctx.beginPath(); ctx.moveTo(x - r * 1.3, cy + r * 0.45); ctx.lineTo(x + r * 1.3, cy + r * 0.45); ctx.lineTo(x + r * 0.8, cy + r * 1.3); ctx.lineTo(x - r * 0.8, cy + r * 1.3); ctx.closePath(); ctx.fillStyle = '#6b4a2b'; ctx.fill(); ctx.lineWidth = 1.2; ctx.strokeStyle = '#161616'; ctx.stroke(); }
+    ctx.beginPath(); ctx.arc(x, cy, r, 0, 7); ctx.fillStyle = NATIONS[a.owner].color; ctx.fill();
+    ctx.lineWidth = i === sel ? 3.5 : 1.5; ctx.strokeStyle = i === sel ? '#fff' : '#161616'; ctx.stroke();
+    if (a.cut) { ctx.beginPath(); ctx.arc(x, cy, r + 3, 0, 7); ctx.strokeStyle = '#ff3b30'; ctx.lineWidth = 2; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]); }
+    ctx.fillStyle = '#fff'; ctx.font = `700 ${size * 0.52}px system-ui, sans-serif`; ctx.fillText(a.count, x, cy - size * 0.13);
+    ctx.font = `600 ${size * 0.31}px system-ui, sans-serif`; ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillText(a.morale, x, cy + size * 0.3);
+    ctx.globalAlpha = 1; });
+  renderPanel();
+}
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+const myTurn = () => S.cur === humanId && !busy && S.winner < 0 && S.nations[humanId].alive && S.nations[humanId].human;
+function renderIncome() {
+  const box = $('income'); box.innerHTML = '';
+  const me = S.nations[humanId]; if (!me.alive) { box.append(el('p', '', `${me.name} has fallen.`)); $('gold').textContent = ''; return; }
+  const inc = income(S, humanId), tb = el('table', 't');
+  $('gold').textContent = `${humans() > 1 ? me.name + ': ' : ''}Gold ${me.gold} (+${inc.gold})`;
+  const row = (a, small, b, cls) => { const tr = el('tr', cls), td = el('td', '', a); if (small) { td.append(' '); td.append(el('small', '', small)); } tr.append(td, el('td', '', b)); tb.append(tr); };
+  row('In the treasury', '', me.gold + 'g', 'total');
+  row('Capital', '', '+' + CAP_BASE);
+  row('Land bonus', `${inc.land} hexes ÷ ${LAND_PER_BONUS}; next at ${inc.nextAt}`, '+' + inc.bonus);
+  row('Towns and ports', `${inc.calm} calm \u00d7 ${inc.perTown}` + (inc.towns > inc.calm ? `, ${inc.towns - inc.calm} in unrest` : ''), '+' + inc.calm * inc.perTown);
+  row('Workshops', `${inc.shops} × ${inc.perShop}`, '+' + inc.shops * inc.perShop);
+  if (inc.perPort) row('Shipwrights', `${inc.ports} ports \u00d7 ${inc.perPort}`, '+' + inc.ports * inc.perPort);
+  if (inc.w.farm) row('Farms', `${inc.w.farm}, +1 each, +1 linked to your mill`, '+' + inc.wg.farm);
+  if (inc.w.mill) row('Mills', `${inc.w.mill}`, '+' + inc.wg.mill);
+  if (inc.w.mine) row('Mines', `${inc.w.mine}, +2 each when linked to your workshop`, '+' + inc.wg.mine);
+  if (inc.w.fish) row('Fisheries', `${inc.w.fish}, +1 each when linked to your port`, '+' + inc.wg.fish);
+  row('Income per turn', '', '+' + inc.gold, 'total');
+  row('Moves per turn', `${MOVES} + 1 per ${TOWNS_PER_MOVE} towns, max ${MAX_MOVES}`, String(inc.moves));
+  box.append(tb);
+}
+function renderOrders() {
+  const box = $('orders'); box.innerHTML = '';
+  if (focus < 0) { box.append(el('p', '', 'Click any hex to see what it is and what you can buy there: troops and buildings in your towns and ports; roads, towers, wharves and farms on your land; and bridges, mills, mines and fisheries on rivers, ore mountains and sea next to your land.')); return; }
+  const c = S.cells[focus], me = S.nations[humanId], can = myTurn();
+  box.append(el('div', '', describe(focus, true)));
+  const group = label => { const g = el('div', 'acts'); g.append(el('span', '', label)); box.append(g); return g; };
+  const btn = (g, text, on, fn) => { const b = el('button', '', text); b.disabled = !can || !on; b.onclick = () => { fn(); render(); }; g.append(b); return b; };
+  if (c.owner === humanId && isTown(c)) {
+    if (c.unrest) box.append(el('p', '', `Unrest for ${c.unrest} more turn${c.unrest > 1 ? 's' : ''}: no gold, no recruiting, no building. Keep an army here or it may revolt.`));
+    else {
+      const room = CAP - (c.army ? c.army.count : 0), g = group(`Raise troops here, 1 gold each${c.army ? ' (they join the army but cannot move this turn; morale averages with the recruits\' ' + (tech(S, humanId, 'M', 1) ? 4 : 3) + ')' : ' (new army at morale ' + (tech(S, humanId, 'M', 1) ? 4 : 3) + ', cannot move this turn)'}`);
+      for (const k of [1, 5, 10]) btn(g, '+' + k, me.gold >= k && room >= k, () => recruit(S, humanId, focus, k));
+      btn(g, 'Max', me.gold >= 1 && room >= 1, () => recruit(S, humanId, focus, 99));
+    }
+  }
+  const items = [['walls', c.walls ? `Walls level ${c.walls + 1}` : 'Walls', '+5 defense per level and a militia of 4 per level'], ['shop', c.shop ? 'Workshop level 2' : 'Workshop', `+${income(S, humanId).perShop} gold per turn`],
+    ['road', 'Road', 'road-to-road steps cost half a move'], ['tower', 'Tower', '+3 defense; the hex must be entered to be taken'], ['wharf', 'Wharf', 'armies can embark here; no gold, no recruiting, not a town'], ['bridge', 'Bridge', 'makes this river hex crossable and yours'],
+    ['farm', 'Farm', '+1 gold, +1 more when linked to your mill; must be within 2 hexes of your town'], ['mill', 'Mill', '+2 gold, and every farm of yours linked to it pays +1'], ['mine', 'Mine', '+3 gold, +2 when linked to a town of yours that has a workshop'], ['fish', 'Fishery', '+2 gold, +1 when linked to your port']];
+  const avail = items.map(it => [it, buildCost(S, humanId, focus, it[0])]).filter(x => x[1] >= 0), has = k => avail.some(x => x[0][0] === k);
+  const touch = NB[focus].some(x => x >= 0 && S.cells[x].land && S.cells[x].owner === humanId), why = [];
+  if (c.land && c.owner === humanId && !c.unrest && !isSite(c) && !c.bridge && !c.wharf && !c.b && !has('farm')) why.push('No farm here: a farm must be within 2 hexes of one of your towns, ports or your capital. There is no limit on farms next to each other.');
+  if (c.t === 3 && touch && !c.b && !has('mill')) why.push('No mill here: mills cannot be adjacent to another mill.');
+  if (c.sea && touch && !c.b && !has('fish')) why.push('No fishery here: fisheries cannot be adjacent to another fishery.');
+  if (c.t === 2 && touch && !c.ore) why.push('No mine here: only mountains marked with gold dots have ore.');
+  if (c.unrest && c.owner === humanId && !isTown(c)) why.push('Nothing can be built on a hex in unrest.');
+  why.forEach(t => box.append(el('p', '', t)));
+  if (avail.length) { const g = group('Build'); const ctx = ecoCtx(S, humanId);
+    for (const [[what, label, tip], cost] of avail) { btn(g, `${label} · ${cost}g` + (WORK[what] ? ` · +${yieldAt(ctx, focus, what)}/turn here` : ''), me.gold >= cost, () => build(S, humanId, focus, what)).title = tip; }
+    box.append(el('p', '', avail.map(([[, label, tip]]) => `${label}: ${tip}.`).join(' ')));
+    if (avail.some(x => WORK[x[0][0]])) box.append(el('p', '', `Linked means within ${LINK} hexes, or joined by your own unbroken road (the road must touch or run next to both ends).`)); }
+}
+function renderTech() {
+  const box = $('tech'); box.innerHTML = ''; const me = S.nations[humanId], can = myTurn();
+  for (const b of 'MEN') { const have = techCount(me, b), cost = techCost(me, b), d = el('div', 'tech'), top = el('div', 'top', BRANCH[b]), lv = el('div', 'lv');
+    for (let k = 0; k < 4; k++) lv.append(el('i', k < have ? 'on' : '')); top.append(lv); d.append(top);
+    if (have < 4) d.append(el('div', 'meta', `Any one of these for ${cost}g` + (have < 3 ? `; the one after costs ${TECH_COST[have + 1]}g` : '')));
+    TECH[b].forEach((t, k) => { const own = me.tech[b][k], row = el('div', 'tier' + (own ? ' have' : ' next')), txt = el('div', 'txt');
+      txt.append(el('b', '', t.name), document.createTextNode(' ' + t.desc)); row.append(txt);
+      if (own) row.append(el('span', 'tag', 'Owned'));
+      else { const bt = el('button', '', me.researched ? 'Next turn' : `${cost}g`); bt.title = me.researched ? 'One research per turn' : 'Research ' + t.name; bt.disabled = !can || me.researched || me.gold < cost; bt.onclick = () => { research(S, humanId, b, k); render(); }; row.append(bt); }
+      d.append(row); });
+    box.append(d); }
+  box.append(el('p', '', 'Buy in any order, one research per turn. Each purchase raises the price of the next one in that branch only: 20, 25, 30, 35.'));
+}
+function renderPanel() {
+  renderSplit();
+  const n = S.nations[S.cur], mine = myTurn();
+  $('turn').innerHTML = ''; const chip = el('span', 'chip'); chip.style.background = n.color;
+  $('turn').append(chip, document.createTextNode(`Round ${S.round} · ${n.human ? 'Your turn' : n.name + ' is moving'}`));
+  $('pips').innerHTML = ''; for (let k = 0; k < S.movesMax; k++) { const i = el('i'); if (k >= S.movesLeft) i.className = 'used'; $('pips').append(i); }
+  $('end').disabled = !mine; $('end').classList.toggle('pulse', mine && S.movesLeft === 0);
+  renderIncome(); renderOrders(); renderTech();
+  const sh = strengths(S), box = $('nations'); box.innerHTML = '';
+  S.nations.forEach(x => {
+    let troops = 0; for (const c of S.cells) if (c.army && c.army.owner === x.id) troops += c.army.count;
+    const d = el('div', 'nation' + (x.alive ? '' : ' dead')), top = el('div', 'top'), ch = el('span', 'chip'); ch.style.background = x.color;
+    top.append(ch, document.createTextNode(x.name + (x.human ? (humans() > 1 ? ' (player)' : ' (you)') : '')));
+    if (x.alive && x.id !== humanId && S.pact[humanId][x.id]) top.append(el('span', 'peace', 'At peace'));
+    d.append(top);
+    if (x.alive) {
+      const inc = income(S, x.id), tl = 'MEN'.split('').map(b => b + techCount(x, b)).join(' ');
+      const bar = el('div', 'bar'), b = el('b'); b.style.width = (sh[x.id] * 100).toFixed(0) + '%'; b.style.background = x.color; bar.append(b);
+      d.append(el('div', 'meta', `${troops} troops · ${x.gold}g +${inc.gold}/turn · ${inc.towns} towns · tech ${tl}`), bar);
+      if (x.id !== humanId && S.nations[humanId].alive && S.nations[humanId].human) {
+        const btn = el('button');
+        const me = S.nations[humanId], sent = S.offers.some(o => o.from === humanId && o.to === x.id);
+        if (S.pact[humanId][x.id]) { btn.textContent = 'Break pact'; btn.onclick = () => { setPact(S, humanId, x.id, false); S.cooldown[humanId][x.id] = true; S.log.push(`${me.name} broke its pact with ${x.name} and cannot attack them until next turn.`); deselect(); render(); }; }
+        else if (x.human) { btn.textContent = sent ? 'Proposal sent' : 'Propose peace'; btn.disabled = sent || S.round < S.noPact[humanId][x.id];
+          btn.onclick = () => { S.offers.push({ from: humanId, to: x.id }); S.log.push(`${me.name} proposed peace to ${x.name}; they answer on their turn.`); render(); }; }
+        else { btn.textContent = S.proposed[x.id] ? 'Proposal declined' : 'Propose peace'; btn.disabled = S.proposed[x.id];
+          btn.onclick = () => { S.proposed[x.id] = true; if (wantsPeace(S, x.id, humanId, strengths(S))) { setPact(S, humanId, x.id, true); S.log.push(`${x.name} accepted ${me.name}'s peace proposal.`); } else S.log.push(`${x.name} rejected ${me.name}'s peace proposal.`); deselect(); render(); }; }
+        if (!mine) btn.disabled = true; d.append(btn);
+      }
+    }
+    box.append(d);
+  });
+  const lg = $('log'); lg.innerHTML = ''; S.log.slice(-40).reverse().forEach(t => lg.append(el('div', '', t)));
+}
+function deselect() { sel = -1; reach = null; frac = 1; }
+// the split picker under the map: how much of the selected army goes on its next move
+function renderSplit() {
+  const bar = $('splitbar'); bar.innerHTML = ''; if (sel < 0 || !S.cells[sel].army) return;
+  const a = S.cells[sel].army, v = vets(a), fresh = a.fresh || 0;
+  bar.append(el('span', '', 'Move:'));
+  for (const [f, label] of [[0.25, '\u00bc'], [0.5, '\u00bd'], [0.75, '\u00be'], [1, 'All']]) { const m = movers(S, sel, f === 1 ? undefined : f), b = el('button', f === frac ? 'on' : '', m > 0 ? `${label} (${m})` : label);
+    b.disabled = m < 1; b.title = m < 1 ? `Each side of a split needs at least ${SPLIT_MIN} troops` : `${m} move, ${a.count - m} stay`; b.onclick = () => { frac = f; reach = reachable(S, sel, m); render(); }; bar.append(b); }
+  const cur = movers(S, sel, frac === 1 ? undefined : frac), notes = [];
+  if (fresh) notes.push(`${fresh} raised this turn stay`);
+  if (frac === 1 && cur < v) notes.push(`${v - cur} stay as garrison (unrest)`);
+  if (a.count < SPLIT_MIN * 2 && !fresh) notes.push(`armies under ${SPLIT_MIN * 2} cannot split`);
+  if (notes.length) bar.append(el('span', '', notes.join(' \u00b7 ')));
+}
+function cellAt(ev) { const rc = cv.getBoundingClientRect(), mx_ = ev.clientX - rc.left, my_ = ev.clientY - rc.top; let b = -1, bd = size * size;
+  for (let i = 0; i < W * H; i++) { const [x, y] = center(i), d = (x - mx_) ** 2 + (y - my_) ** 2; if (d < bd) { bd = d; b = i; } } return b; }
+function describe(i, plain) {
+  if (i < 0) return ''; const c = S.cells[i];
+  if (!plain && sel >= 0 && reach && reach.res.get(i) === 'attack') { const a = S.cells[sel].army, d = defender(S, i), aP = Math.round(atk(S, a)), fb = defBonus(S, i, humanId), am = amphib(S, sel, i, humanId), dP = Math.round(power(d)) + fb + am, r = aP / dP;
+    const notes = [d.militia ? `militia of ${d.count}` : '', fb ? `+${fb} fortification` : '', am ? `+${am} against a landing` : ''].filter(Boolean).join(', ');
+    return `Attack: your power ${aP} vs ${dP}${notes ? ' (' + notes + ')' : ''}. ${r > 1.25 ? 'Should win.' : r > 0.85 ? 'Toss-up.' : 'Likely to fail, and a failed attack loses the whole army.'}`; }
+  const army = c.army ? ` · ${NATIONS[c.army.owner].name} ${c.sea ? 'fleet' : 'army'} of ${c.army.count}, morale ${c.army.morale}/5 (\u00d7${(0.7 + 0.1 * c.army.morale).toFixed(1)}), power ${Math.round(power(c.army))}${c.army.fresh ? ', ' + c.army.fresh + ' raised this turn' : ''}${c.army.cut ? ', CUT OFF from supply' : ''}` : '';
+  const work = c.b ? ` \u00b7 ${NATIONS[c.bo].name} ${WORK[c.b]}` + (c.land ? ' (burned if the hex changes hands)' : ' (burned by an enemy army ending its move next to it)') : '';
+  if (c.sea) return 'Sea. Armies embark from a port and sail up to 3 hexes per move.' + work + army;
+  if (c.t === 2) return 'Mountains. Impassable without Mountaineers.' + (c.ore && !c.b ? ' Ore here: a mine can be built from adjacent land.' : '') + work;
+  if (c.t === 3) return 'River. Impassable except at a bridge, or with Pontoons.' + work;
+  let s = c.owner < 0 ? 'Unclaimed land' : `${NATIONS[c.owner].name} ${c.owner === REBEL ? 'holdout' : 'territory'}`;
+  if (c.bridge) s += ' · bridge'; if (c.road) s += ' · road'; if (c.tower) s += ' · tower (+3 defense)';
+  if (c.capital >= 0) s += ownCapital(S, c) ? ' · capital' : ' · former capital (acts as a town)'; else if (c.town) s += ' \u00b7 town';
+  if (c.wharf) s += ' \u00b7 wharf (armies can embark)';
+  if (c.walls) s += ` · walls level ${c.walls} (+${c.walls * 5} defense, militia ${c.walls * 4})`;
+  if (c.shop) s += ` · workshop level ${c.shop}`;
+  if (c.unrest) s += ` · unrest ${c.unrest}`;
+  if (c.port) s += ' \u00b7 port' + (c.town ? '' : ' (counts as a town)');
+  return s + work + army;
+}
+cv.addEventListener('mousemove', e => { const i = cellAt(e); if (i !== hover) { hover = i; $('status').textContent = describe(i); } });
+cv.addEventListener('click', e => {
+  const i = cellAt(e); if (i < 0) return; focus = i;
+  if (busy || S.winner >= 0 || S.cur !== humanId) { render(); return; }
+  const c = S.cells[i];
+  if (sel >= 0 && reach.res.has(i)) { const from = sel, f = frac === 1 ? undefined : frac; deselect(); const ev = doMove(S, from, i, f); if (ev) last = { from, to: i }; render(); $('status').textContent = describe(i); if (S.winner >= 0) gameOver(); return; }
+  if (c.army && c.army.owner === humanId && !c.army.moved && vets(c.army) > 0 && S.movesLeft > 0) { sel = i; frac = 1; reach = reachable(S, i, movers(S, i)); }
+  else { deselect(); if (c.army && c.army.owner === humanId) $('status').textContent = S.movesLeft <= 0 ? 'No moves left. End your turn.' : (c.army.moved ? 'That army has already moved this turn.' : 'Those troops were raised this turn and cannot move yet.'); }
+  render();
+});
+function modal(title, text, btns) { $('mtitle').textContent = title; $('mtext').textContent = text; const b = $('mbtns'); b.innerHTML = '';
+  btns.forEach(([label, fn, primary]) => { const x = el('button', primary ? 'primary' : '', label); x.onclick = () => { $('modal').classList.remove('on'); fn(); }; b.append(x); });
+  $('modal').classList.add('on'); }
+const humans = () => S.nations.filter(x => x.human).length;
+function gameOver() { busy = false; render();
+  const w = S.nations[S.winner]; modal(w.human && humans() === 1 ? 'Victory' : `${w.name} wins`, `${w.name} is the last nation standing after ${S.round} rounds.`, [['New map', start, true]]); }
+function speed() { return $('fast').checked ? 40 : 260; }
+function runTurn() {
+  if (S.winner >= 0) return gameOver();
+  const fallen = S.nations.find(x => x.human && !x.alive && !x.told);
+  if (fallen) { fallen.told = true; busy = false; render(); const left = S.nations.some(x => x.human && x.alive);
+    return modal(`${fallen.name} has fallen`, left ? 'Its capital was taken. The game goes on for the remaining players.' : 'Its capital was taken, and no human players are left.', [[left ? 'Continue' : 'Watch the rest', () => { busy = true; runTurn(); }], ['New map', start, true]]); }
+  const n = S.cur, nat = S.nations[n];
+  if (nat.human) { humanId = n; busy = false; last = null; deselect(); S.log.push(`${nat.name} collected ${S.collected} gold.`);
+    if (humans() > 1) { focus = nat.cap; render(); return modal(`${nat.name}'s turn`, `Pass the device to the ${nat.name} player.`, [['Start turn', handleOffers, true]]); }
+    render(); return handleOffers(); }
+  busy = true; aiDiplomacy(S, n); aiEconomy(S, n); render();
+  const step = () => {
+    if (S.winner >= 0) return gameOver();
+    const m = S.movesLeft > 0 ? pickFor(S, n) : null;
+    if (!m) { aiEndDiplomacy(S, n); nextTurn(S); render(); timer = setTimeout(runTurn, speed()); return; }
+    doMove(S, m.from, m.to); last = m; render(); timer = setTimeout(step, speed());
+  };
+  timer = setTimeout(step, speed());
+}
+function handleOffers() {
+  const k = S.offers.findIndex(o => o.to === humanId); if (k < 0) return;
+  const o = S.offers.splice(k, 1)[0].from, me = S.nations[humanId];
+  if (!S.nations[o].alive || S.pact[humanId][o]) return handleOffers();
+  modal(`${S.nations[o].name} proposes peace to ${me.name}`, 'While the pact holds, neither side can attack or enter the other\'s land. Either side may break it later.',
+    [['Decline', () => { S.log.push(`${me.name} declined peace with ${S.nations[o].name}.`); render(); handleOffers(); }],
+     ['Accept', () => { setPact(S, humanId, o, true); S.log.push(`${me.name} signed a peace pact with ${S.nations[o].name}.`); render(); handleOffers(); }, true]]);
+}
+$('end').onclick = () => { if (busy || S.cur !== humanId || S.winner >= 0) return; deselect(); nextTurn(S); busy = true; render(); runTurn(); };
+const setAuto = () => { if (S) S.auto = S.nations.map(x => x.human ? $('autog').checked : true); };
+function start() {
+  clearTimeout(timer); $('modal').classList.remove('on'); deselect(); last = null; busy = false; focus = -1;
+  const who = [0, 1, 2, 3].map(i => $('p' + i).value === 'h'); humanId = Math.max(0, who.indexOf(true));
+  S = newGame((Math.random() * 1e9) | 0, -1); S.nations.forEach((x, i) => { x.human = who[i]; }); S.ai = [0, 0, 0, 0].map(() => +$('level').value); setAuto(); focus = S.nations[humanId].cap;
+  S.log.push(`A new war begins. ${S.nations[S.first].name} moves first; later movers start with 4 extra troops per place behind.`); layout(); render(); runTurn();
+}
+NATIONS.slice(0, 4).forEach((n, i) => { const lab = el('label'), chip = el('span', 'chip'), sel = document.createElement('select'); chip.style.background = n.color; chip.title = n.name; sel.id = 'p' + i; sel.title = n.name;
+  for (const [v, t] of [['h', 'Human'], ['a', 'AI']]) { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.append(o); }
+  sel.value = i === 0 ? 'h' : 'a'; sel.onchange = start; lab.append(chip, sel); $('players').append(lab); });
+$('new').onclick = start; $('level').onchange = start; $('autog').onchange = () => { setAuto(); render(); };
+window.addEventListener('resize', () => { layout(); render(); });
+$('setupToggle').onclick = () => { const off = document.body.classList.toggle('setupoff'); $('setupToggle').textContent = off ? 'Setup \u25be' : 'Setup \u25b4'; $('setupToggle').setAttribute('aria-expanded', String(!off)); layout(); render(); };
+$('panel').onclick = () => { const off = document.body.classList.toggle('nopanel'); $('panel').textContent = off ? 'Show panel' : 'Hide panel'; layout(); render(); };
+// Fullscreen: try the browser's real fullscreen first. Where the page is embedded and that is refused,
+// fall back to a map-only mode: setup controls hidden, map edge to edge, side panel as a slide-over.
+function setMax(on) { document.body.classList.toggle('max', on); document.body.classList.toggle('nopanel', on); $('panel').textContent = on ? 'Show panel' : 'Hide panel'; $('full').textContent = on ? 'Exit full view' : 'Fullscreen'; layout(); render(); }
+$('full').onclick = () => {
+  if (document.fullscreenElement) { document.exitFullscreen(); return; }
+  if (document.body.classList.contains('max')) { setMax(false); return; }
+  const fallback = () => { setMax(true); $('status').textContent = 'This viewer does not allow true fullscreen, so the map now fills the whole frame. Show panel opens the side panel over the map.'; };
+  try { const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen; if (!req || document.fullscreenEnabled === false) return fallback();
+    const p = req.call(el); if (p && p.catch) p.catch(fallback); } catch (e) { fallback(); } };
+document.addEventListener('fullscreenchange', () => { const on = !!document.fullscreenElement; document.body.classList.toggle('max', on); $('full').textContent = on ? 'Exit fullscreen' : 'Fullscreen'; layout(); render(); });
+start();
+</script>
+</body>
+</html>
