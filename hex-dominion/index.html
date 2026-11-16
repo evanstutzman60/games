@@ -134,7 +134,7 @@
       <p><b>Walls</b> add defense and post a militia, so an empty walled town must be stormed. Capitals start with level 2 walls.</p>
       <p><b>Unrest.</b> A town taken from someone pays nothing for 3 turns and may revolt if no army holds it.</p>
       <p><b>Supply.</b> An army whose land is not connected to one of your towns (red dashed ring) loses 1 morale a turn, then troops.</p>
-      <p><b>Capitals.</b> Taking one eliminates that nation and loots half its gold. Its garrisoned towns turn rebel; the rest of its land goes free.</p>
+      <p><b>Capitals.</b> Taking one eliminates that nation and loots half its gold. Its garrisoned towns turn rebel; the rest of its land goes free. Rebel bands cannot recruit and slowly lose morale, but each one marches on the nearest town it can beat, sacks it and digs in. They leave living capitals alone.</p>
       <p><b>Sea.</b> Armies embark at ports or wharves, sail 3, and land on any coast (defender +3). The map's ports are full towns: gold, recruiting, walls, workshops, unrest. A wharf you build is only a launch point.</p>
       <p><b>Players.</b> Set each color to Human or AI in the header. With two or more humans the game asks you to pass the device at each turn.</p>
     </div>
@@ -382,7 +382,9 @@ function startTurn(S, n) {
 }
 function nextTurn(S) {
   if (S.winner >= 0) return;
+  const r0 = S.round;
   do { S.cur = (S.cur + 1) % 4; if (S.cur === S.first) S.round++; } while (!S.nations[S.cur].alive);
+  if (S.round !== r0) rebelTurn(S);
   startTurn(S, S.cur);
 }
 // troops raised this turn cannot move yet; the rest are veterans
@@ -417,6 +419,33 @@ function reachable(S, from, cnt) {
     if (F.port || F.wharf || (tech(S, n, 'N', 4) && NB[from].some(x => x >= 0 && cells[x].sea))) sail(false);
   } else sail(true);
   return { res, prev };
+}
+// Holdouts of a fallen nation act once per round: each band marches on the nearest town it can beat, sacks it and digs in.
+// They never recruit, never touch a living capital, and lose a point of morale every third round.
+function rebelTurn(S) {
+  const cells = S.cells, left = S.movesLeft, ids = []; cells.forEach((c, i) => { if (c.army && c.army.owner === REBEL) ids.push(i); });
+  if (!ids.length) return;
+  const decay = S.round % 3 === 0;
+  for (const i of ids) { const A = cells[i], a = A.army; if (!a || a.owner !== REBEL) continue; if (decay) mor(a, -1); if (a.hold || !A.land) continue;
+    const split = isTown(A) && A.owner === REBEL && a.count >= 2 * SPLIT_MIN, m = split ? Math.round(a.count / 2) : a.count, myP = m * (0.7 + 0.1 * a.morale);
+    // nearest town over land that this band could take
+    const d = { [i]: 0 }, q = [i]; let goal = -1;
+    for (let h = 0; h < q.length && goal < 0; h++) { const p = q[h]; for (const x of NB[p]) { if (x < 0 || d[x] !== undefined) continue; const c = cells[x]; if (!c.land) continue; d[x] = d[p] + 1;
+        if (ownCapital(S, c)) continue;
+        if (isTown(c) && c.owner !== REBEL) { if (myP >= (power(defender(S, x)) + defBonus(S, x, REBEL)) * 0.85) { goal = x; break; } continue; }
+        if (c.army && c.army.owner !== REBEL) continue; q.push(x); } }
+    if (goal < 0) continue;
+    a.moved = false; a.fresh = 0; S.movesLeft = 1;
+    const { res } = reachable(S, i, m); let to = -1;
+    if (res.has(goal)) to = goal;
+    else { const g = { [goal]: 0 }, w = [goal]; for (let h = 0; h < w.length; h++) for (const x of NB[w[h]]) if (x >= 0 && g[x] === undefined && cells[x].land) { g[x] = g[w[h]] + 1; w.push(x); }
+      let bd = g[i] === undefined ? 999 : g[i]; for (const [t, type] of res) if (type === 'move' && cells[t].land && !isTown(cells[t]) && g[t] !== undefined && g[t] < bd) { bd = g[t]; to = t; } }
+    if (to < 0) { a.moved = true; continue; }
+    if (split) a.hold = true;                                  // half stays to keep the home town
+    const ev = doMove(S, i, to, split ? 0.5 : undefined);
+    if (ev && to === goal && cells[goal].army && cells[goal].army.owner === REBEL && cells[goal].owner === REBEL) cells[goal].army.hold = true;
+  }
+  S.movesLeft = left;
 }
 function pillage(S, c, n) {
   const loot = COST[c.b] >> 1, was = c.bo; if (n >= 0 && n < 4) S.nations[n].gold += loot;
@@ -538,7 +567,7 @@ function objectiveDist(S, n, capOnly) {
       if (dist[x] + cost < dist[p]) { dist[p] = dist[x] + cost; q.push(p); } } }
   return dist;
 }
-const mobileFoe = (S, n, c) => c.army && c.army.owner !== n && c.army.owner < 4 && hostile(S, n, c.army.owner);
+const mobileFoe = (S, n, c) => c.army && c.army.owner !== n && (c.army.owner < 4 ? hostile(S, n, c.army.owner) : !c.army.hold && c.land);
 function enemyPowerNear(S, n, i, r) {
   let m = 0; S.cells.forEach((c, j) => { if (j !== i && mobileFoe(S, n, c) && hexDist(i, j) <= r) m = Math.max(m, power(c.army)); });
   return m;
