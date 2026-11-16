@@ -4,7 +4,7 @@ const ri = (S, n) => Math.floor(rnd(S) * n), pick = (S, a) => a[ri(S, a.length)]
 function shuffle(S, a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = ri(S, i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const STATS = ['might', 'agility', 'mind', 'spirit'], STAT_NAME = { might: 'Might', agility: 'Agility', mind: 'Mind', spirit: 'Spirit' };
-const K = { hp: 1.35, atk: 0.8, heroHeal: 0.15, vetHp: 1.2, vetAtk: 1.2, vetHeal: 0.08 };   // global difficulty knobs, set by simulation
+const K = { campLv: [0, 0.9, 2.0, 3.0, 3.5], hp: 1.35, atk: 0.8, heroHeal: 0.15, vetHp: 1.2, vetAtk: 1.2, vetHeal: 0.08 };   // global difficulty knobs, set by simulation
 
 const STATE_INFO = {
   Burning: 'Takes fire damage at the start of each of its turns.',
@@ -148,8 +148,9 @@ const WT = {
   warhammer: { n: 'Warhammer', die: [10, 12, 14], two: true, pierce: true, hit: -1, proc: ['Stunned', 0.15], note: 'two-handed; ignores armour, -1 to hit, melee hits have a 15% chance to Stun' },
   crossbow: { n: 'Crossbow', die: [9, 11, 13], two: true, ranged: true, xbow: true, init: -3, note: 'two-handed; basic attacks are ranged and use Might or Agility, -3 initiative' }
 };
-const TIER = ['', 'Fine ', 'Masterwork '], PRICE = [20, 45, 90];
-const ARMOR = { light: { n: ['Robes', 'Warded Robes', 'Archmage Robes'], arm: [0, 1, 1], ward: [1, 2, 4], rank: 1 }, medium: { n: ['Leathers', 'Brigandine', 'Shadowmail'], arm: [1, 2, 3], ward: [0, 1, 1], rank: 2 }, heavy: { n: ['Chainmail', 'Half-plate', 'Full Plate'], arm: [2, 4, 5], ward: [0, 0, 1], rank: 3, slow: 1 } };
+for (const w of Object.values(WT)) { w.die.push(w.die[2] + 2, w.die[2] + 4); if (w.sp) w.sp.push(w.sp[2] + 2, w.sp[2] + 4); }
+const TIER = ['', 'Fine ', 'Masterwork ', 'Runed ', 'Legendary '], PRICE = [20, 45, 90, 160, 260];
+const ARMOR = { light: { n: ['Robes', 'Warded Robes', 'Archmage Robes', 'Runewoven Robes', 'Robes of the Magi'], arm: [0, 1, 1, 2, 2], ward: [1, 2, 4, 5, 7], rank: 1 }, medium: { n: ['Leathers', 'Brigandine', 'Shadowmail', 'Wyrmhide', 'Nightweave'], arm: [1, 2, 3, 4, 5], ward: [0, 1, 1, 2, 3], rank: 2 }, heavy: { n: ['Chainmail', 'Half-plate', 'Full Plate', 'Runed Plate', 'Dragonscale Plate'], arm: [2, 4, 5, 6, 8], ward: [0, 0, 1, 2, 3], rank: 3, slow: 1 } };
 const TRINKETS = [
   ['Ring of Might', { might: 1 }, 1], ['Ring of Agility', { agility: 1 }, 1], ['Ring of Mind', { mind: 1 }, 1], ['Ring of Spirit', { spirit: 1 }, 1],
   ['Belt of Giants', { might: 2 }, 3], ['Cat-step Boots', { agility: 2 }, 3], ['Circlet of Insight', { mind: 2 }, 3], ['Saint\'s Knucklebone', { spirit: 2 }, 3],
@@ -165,10 +166,12 @@ const TRINKETS = [
   ['Phoenix Feather', { phoenix: 1 }, 3], ['Veil of Shadows', { startHidden: 1 }, 3], ['Mirror Shard', { ward: 3, immune: 'Exposed' }, 3]
 ];
 // off-hand items: shields for the armoured classes, tomes for casters, parrying daggers for the quick
-const OFF = { shield: { n: 'Shield', cls: ['warrior', 'priest'], def: [2, 3, 4], arm: [0, 1, 1], fx: [{}, {}, {}] }, tome: { n: 'Tome', cls: ['mage', 'priest'], def: [0, 0, 0], arm: [0, 0, 0], fx: [{ mind: 1 }, { mind: 1, spirit: 1 }, { mind: 2, spirit: 2 }] },
-  parry: { n: 'Parrying Dagger', cls: ['rogue', 'warrior'], def: [1, 2, 2], arm: [0, 0, 0], fx: [{}, { crit: 1 }, { crit: 1, hit: 1 }] } };
+const OFF = { shield: { n: 'Shield', cls: ['warrior', 'priest'], def: [2, 3, 4, 5, 6], arm: [0, 1, 1, 2, 2], fx: [{}, {}, {}, {}, {}] }, tome: { n: 'Tome', cls: ['mage', 'priest'], def: [0, 0, 0, 0, 0], arm: [0, 0, 0, 0, 0], fx: [{ mind: 1 }, { mind: 1, spirit: 1 }, { mind: 2, spirit: 2 }, { mind: 3, spirit: 2 }, { mind: 4, spirit: 3 }] },
+  parry: { n: 'Parrying Dagger', cls: ['rogue', 'warrior'], def: [1, 2, 2, 3, 3], arm: [0, 0, 0, 0, 0], fx: [{}, { crit: 1 }, { crit: 1, hit: 1 }, { crit: 1, hit: 2 }, { crit: 2, hit: 2 }] } };
 const offOf = it => OFF[it.type || 'shield'];
-const FX_TEXT = { dmg: v => `+${v} damage on every hit`, phoenix: () => 'once per fight, survive a killing blow', procs: v => v.map(p => `hits have a ${pct(p[1])} chance to apply ${p[0]}`).join(', '), healm: v => `your heals are ${pct(v)} stronger`, startHidden: () => 'starts every fight Hidden', startTaunt: () => 'starts every fight with Taunt', might: v => `+${v} Might`, agility: v => `+${v} Agility`, mind: v => `+${v} Mind`, spirit: v => `+${v} Spirit`, hp: v => `+${v} health`, arm: v => `+${v} armour`, ward: v => `+${v} ward (reduces spell damage)`, hit: v => `+${v} to hit`,
+const FX_TEXT = { def: v => `+${v} defence`, spd: v => `spell die +${v}`, lowhp: v => `+${pct(v)} damage while below half health`, exec: v => `+${pct(v)} damage to enemies below 30% health`, aoe: v => `+${pct(v)} damage with row and all-enemy skills`, dr: v => `takes ${pct(v)} less damage`, pen: v => `ignores ${v} armour and ward`,
+  chance: v => `+${pct(v)} to your chances of applying states`, opener: () => 'first attack each fight is a critical hit', killHeal: v => `heal ${pct(v)} of your health on a kill`, spread: () => 'when a Burning enemy dies, the fire jumps to another', vs: v => v.map(p => `+${pct(p[1])} damage to ${p[0]} enemies`).join(', '), aura: v => 'the whole party gains: ' + fxText(v),
+  dmg: v => `+${v} damage on every hit`, phoenix: () => 'once per fight, survive a killing blow', procs: v => v.map(p => `hits have a ${pct(p[1])} chance to apply ${p[0]}`).join(', '), healm: v => `your heals are ${pct(v)} stronger`, startHidden: () => 'starts every fight Hidden', startTaunt: () => 'starts every fight with Taunt', might: v => `+${v} Might`, agility: v => `+${v} Agility`, mind: v => `+${v} Mind`, spirit: v => `+${v} Spirit`, hp: v => `+${v} health`, arm: v => `+${v} armour`, ward: v => `+${v} ward (reduces spell damage)`, hit: v => `+${v} to hit`,
   crit: v => `crits on a roll of ${20 - v}+`, regen: v => `regain ${v} health each turn`, startGuard: () => 'starts every fight with Guard', immune: v => `immune to ${v}`, dur: v => `states you apply last ${v} turn longer`,
   cdr: v => `cooldowns are ${v} turn shorter`, thorns: v => `melee attackers take ${v} damage`, leech: v => `heal for ${pct(v)} of damage dealt`, init: v => `+${v} initiative`, pay: v => `combo bonuses are +${v} stronger` };
 const CONS = {
@@ -201,7 +204,7 @@ const SETS = {
   mercy: { n: 'Vestments of Mercy', pieces: [{ k: 'shield', n: 'Aegis of Mercy' }, { k: 'armor', type: 'light', n: 'Vestments of Mercy' }, { k: 'trinket', n: 'Rosary of Mercy', fx: { spirit: 1 } }], bonus: { 2: { spirit: 2 }, 3: { healm: 0.3, regen: 3 } } },
   signet: { n: 'The Twin Signets', pieces: [{ k: 'trinket', n: 'Sun Signet', fx: { might: 1 } }, { k: 'trinket', n: 'Moon Signet', fx: { mind: 1 } }], bonus: { 2: { hp: 10, hit: 1 } } }
 };
-function mergeFx(into, fx) { for (const [k, v] of Object.entries(fx || {})) { if (k === 'immune') (into.immune = into.immune || []).push(...[].concat(v)); else if (k === 'procs') into.procs = (into.procs || []).concat(v); else into[k] = (into[k] || 0) + v; } return into; }
+function mergeFx(into, fx) { for (const [k, v] of Object.entries(fx || {})) { if (k === 'immune') (into.immune = into.immune || []).push(...[].concat(v)); else if (k === 'procs') into.procs = (into.procs || []).concat(v); else if (k === 'vs') into.vs = (into.vs || []).concat(v); else if (k === 'aura') into.aura = mergeFx(into.aura || {}, v); else into[k] = (into[k] || 0) + v; } return into; }
 // fills in the derived fields (name, effects, rarity, price) after an item is made or changed
 function finish(it) {
   if (it.k === 'cons') { it.r = 0; return it; }
@@ -248,26 +251,41 @@ function equip(S, h, it) {
 const packable = S => S.screen !== 'combat' && S.screen !== 'end';
 function fromStash(S, si, hi) { const it = S.stash[si], h = S.party[hi]; if (!packable(S) || !it || !h || !canUse(h, it)) return false; S.stash.splice(si, 1); equip(S, h, it); return true; }
 function unequip(S, hi, slot) { const h = S.party[hi]; if (!packable(S) || !h || slot === 'w' || !h.gear[slot]) return false; S.stash.push(h.gear[slot]); h.gear[slot] = null; if (slot === 't1' && h.gear.t2) { h.gear.t1 = h.gear.t2; h.gear.t2 = null; } h.hp = clamp(h.hp, 1, maxHp(h)); return true; }
-function sellStash(S, si) { const it = S.stash[si]; if (!it || S.screen !== 'shop') return false; S.gold += it.price >> 1; S.stash.splice(si, 1); return true; }
+function sellStash(S, si) { const it = S.stash[si]; if (!it || (S.screen !== 'shop' && S.screen !== 'town')) return false; S.gold += it.price >> 1; S.stash.splice(si, 1); return true; }
+
+// ---------- talents: one of two at each of levels 6 to 10 ----------
+const TALENTS = {
+  guardian: [[['Iron Skin', { arm: 2 }], ['Shield Wall', { def: 2 }]], [['Stalwart', { hp: 16 }], ['Retribution', { thorns: 4 }]], [['Rallying Presence', { aura: { arm: 1 } }], ['Unbreakable', { immune: 'Stunned' }]], [['Punisher', { vs: [['Exposed', 0.25]] }], ['Second Wind', { regen: 4 }]], [['Living Fortress', { dr: 0.15 }], ['Warden\'s Oath', { startGuard: 1, startTaunt: 1 }]]],
+  berserker: [[['Bloodlust', { lowhp: 0.25 }], ['Brutal Force', { dmg: 2 }]], [['Butcher', { exec: 0.3 }], ['Thick Hide', { hp: 14 }]], [['Feast', { killHeal: 0.15 }], ['Savage', { crit: 2 }]], [['Opportunist', { vs: [['Prone', 0.3], ['Stunned', 0.3]] }], ['Relentless', { cdr: 1 }]], [['Rampage', { aoe: 0.3 }], ['Deathless Rage', { phoenix: 1 }]]],
+  assassin: [[['Opener', { opener: 1 }], ['Precision', { hit: 2 }]], [['Lethality', { crit: 2 }], ['Slippery', { def: 2 }]], [['Exploit Weakness', { pay: 0.4 }], ['Venom', { procs: [['Exposed', 0.25]] }]], [['Cull', { exec: 0.35 }], ['Shadowstep', { startHidden: 1 }]], [['Master Assassin', { vs: [['Marked', 0.35]] }], ['Quick Hands', { cdr: 1 }]]],
+  ranger: [[['Eagle Eye', { hit: 2 }], ['Fleet', { init: 5 }]], [['Hunter\'s Mark', { procs: [['Marked', 0.3]] }], ['Camouflage', { def: 2 }]], [['Piercing Arrows', { pen: 3 }], ['Steady Aim', { crit: 2 }]], [['Suppressing Fire', { aoe: 0.3 }], ['Predator', { vs: [['Marked', 0.3]] }]], [['Deadeye', { dmg: 3 }], ['Trapper', { chance: 0.2, dur: 1 }]]],
+  pyromancer: [[['Kindling', { procs: [['Burning', 0.3]] }], ['Focus', { mind: 1, hit: 1 }]], [['Wildfire', { spread: 1 }], ['Ember Ward', { ward: 3, immune: 'Burning' }]], [['Scorch', { vs: [['Burning', 0.25]] }], ['Lingering Flames', { dur: 1 }]], [['Conflagration', { aoe: 0.3 }], ['Quickened Casting', { cdr: 1 }]], [['Heart of Fire', { pay: 0.5 }], ['Arcane Might', { spd: 4 }]]],
+  stormcaller: [[['Static', { chance: 0.15 }], ['Focus', { mind: 1, hit: 1 }]], [['Overload', { vs: [['Stunned', 0.3]] }], ['Storm Ward', { ward: 3, def: 1 }]], [['Forked Lightning', { aoe: 0.3 }], ['Tailwind', { init: 5 }]], [['Thunderstruck', { procs: [['Prone', 0.25]] }], ['Quickened Casting', { cdr: 1 }]], [['Eye of the Storm', { pen: 4, crit: 1 }], ['Arcane Might', { spd: 4 }]]],
+  lightbringer: [[['Gentle Hands', { healm: 0.2 }], ['Devotion', { spirit: 1, hp: 6 }]], [['Beacon', { aura: { regen: 2 } }], ['Sanctified', { ward: 3 }]], [['Radiant', { vs: [['Marked', 0.25], ['Exposed', 0.25]] }], ['Swift Prayers', { cdr: 1 }]], [['Benediction', { aura: { hit: 1 } }], ['Martyr', { hp: 14 }]], [['Miracle Worker', { healm: 0.3 }], ['Divine Wrath', { spd: 4 }]]],
+  warpriest: [[['Zeal', { dmg: 2 }], ['Devotion', { spirit: 1, hp: 6 }]], [['Armour of Faith', { arm: 2 }], ['Smiter', { hit: 2 }]], [['Crusader', { aura: { dmg: 1 } }], ['Righteous Fury', { vs: [['Exposed', 0.25]] }]], [['Hammer of Judgement', { chance: 0.15, procs: [['Stunned', 0.1]] }], ['Blood for Blessing', { leech: 0.15 }]], [['Avatar of War', { dr: 0.12, lowhp: 0.2 }], ['Shepherd', { healm: 0.25, aura: { regen: 2 } }]]]
+};
+const talentsOf = h => h.sub ? (h.tal || []).map((c, k) => c === 0 || c === 1 ? TALENTS[h.sub][k][c] : null).filter(Boolean) : [];
+function setTalent(S, hi, k, c) { const h = S.party[hi]; if (!h || !h.sub || k < 0 || k > h.level - 6 || (c !== 0 && c !== 1)) return false; h.tal = h.tal || []; const m0 = maxHp(h); h.tal[k] = c; h.hp = clamp(h.hp + Math.max(0, maxHp(h) - m0), 1, maxHp(h)); return true; }
 
 // ---------- heroes ----------
 function heroFx(h) { const fx = {}, sets = {}; for (const g of Object.values(h.gear)) { if (!g) continue; mergeFx(fx, g.fx); if (g.set) sets[g.set] = (sets[g.set] || 0) + 1; }
-  for (const [k, n] of Object.entries(sets)) for (const [need, b] of Object.entries(SETS[k].bonus)) if (n >= +need) mergeFx(fx, b); return fx; }
+  for (const [k, n] of Object.entries(sets)) for (const [need, b] of Object.entries(SETS[k].bonus)) if (n >= +need) mergeFx(fx, b);
+  for (const t of talentsOf(h)) mergeFx(fx, t[1]); return fx; }
 function heroStat(h, s) { const c = CLASSES[h.cls], L = h.level - 1, fx = heroFx(h);
   return c.st[STATS.indexOf(s)] + (c.grow[0] === s ? L : c.grow[1] === s ? L >> 1 : 0) + (fx[s] || 0) - (s === 'agility' && h.gear.a && ARMOR[h.gear.a.type].slow ? 1 : 0); }
 function maxHp(h) { const c = CLASSES[h.cls]; return Math.max(1, Math.round((c.hp + c.hpl * (h.level - 1) + (heroFx(h).hp || 0)) * (1 - 0.12 * h.wounds))); }
 function known(h) { const c = CLASSES[h.cls], out = c.base.slice(0, h.level >= 2 ? 5 : 4); if (h.sub) out.push(...c.subs[h.sub].sk.slice(0, h.level - 2)); return out; }
 function autoEquip(h) { h.eq = known(h).slice().sort((a, b) => SK[b].w - SK[a].w).slice(0, 4); }
 function newHero(seat, i) { const c = CLASSES[seat.cls];
-  const h = { name: seat.name || c.n, cls: seat.cls, sub: null, ctrl: seat.ctrl, player: seat.player || '', level: 1, wounds: 0, row: c.row, hp: 0, eq: [],
+  const h = { name: seat.name || c.n, cls: seat.cls, sub: null, ctrl: seat.ctrl, player: seat.player || '', level: 1, wounds: 0, row: c.row, hp: 0, eq: [], tal: [],
     gear: { w: mkWeapon(c.start[0], 1), off: c.start[1] ? mkShield(1) : null, a: mkArmor(c.start[2], 1), t1: null, t2: null } };
   h.hp = maxHp(h); h.eq = known(h).slice(0, 4); return h; }
 function heroUnit(h, i) {
   const fx = heroFx(h), g = h.gear, w = WT[g.w.type], t = g.w.tier - 1, st = {}; for (const s of STATS) st[s] = heroStat(h, s);
   if (w.crit) fx.crit = (fx.crit || 0) + w.crit; if (w.init) fx.init = (fx.init || 0) + w.init; if (w.proc) fx.procs = (fx.procs || []).concat([[w.proc[0], w.proc[1], 'melee']]);
   return { id: 'h' + i, side: 'H', hi: i, name: h.name, row: h.row, hp: h.hp, max: maxHp(h), st, lvl: h.level, fx,
-    arm: (g.a ? ARMOR[g.a.type].arm[g.a.tier - 1] : 0) + (g.off ? offOf(g.off).arm[g.off.tier - 1] : 0) + (fx.arm || 0), ward: (g.a ? ARMOR[g.a.type].ward[g.a.tier - 1] : 0) + (fx.ward || 0), defb: g.off ? offOf(g.off).def[g.off.tier - 1] : 0,
-    w: { die: w.die[t], sp: w.sp ? w.sp[t] : 4 + t, hit: w.hit || 0, bonus: w.bonus || 0, pierce: w.pierce, fin: w.fin, assassin: w.assassin, reach: w.reach, ranged: w.ranged, splash: w.splash, xbow: w.xbow },
+    arm: (g.a ? ARMOR[g.a.type].arm[g.a.tier - 1] : 0) + (g.off ? offOf(g.off).arm[g.off.tier - 1] : 0) + (fx.arm || 0), ward: (g.a ? ARMOR[g.a.type].ward[g.a.tier - 1] : 0) + (fx.ward || 0), defb: (g.off ? offOf(g.off).def[g.off.tier - 1] : 0) + (fx.def || 0),
+    w: { die: w.die[t], sp: (w.sp ? w.sp[t] : 4 + t) + (fx.spd || 0), hit: w.hit || 0, bonus: w.bonus || 0, pierce: w.pierce, fin: w.fin, assassin: w.assassin, reach: w.reach, ranged: w.ranged, splash: w.splash, xbow: w.xbow },
     skills: h.eq.slice(), states: {}, cds: {}, used: {}, down: h.hp <= 0 };
 }
 
@@ -301,6 +319,8 @@ const EN = {
   knight: { n: 'Hollow Knight', fam: 'undead', hp: 100, atk: 6, agi: 2, arm: 4, ward: 1, die: 10, row: 'F', sk: ['e_hit', 'e_crush', 'e_cleave', 'e_curse'], boss: true },
   beastlord: { n: 'Beastlord', fam: 'beast', hp: 85, atk: 6, agi: 4, arm: 1, ward: 1, die: 10, row: 'F', sk: ['e_hit', 'e_maul', 'e_roar', 'e_callwolves'], boss: true },
   prophet: { n: 'Prophet', fam: 'cult', hp: 72, atk: 6, agi: 3, arm: 0, ward: 3, die: 9, row: 'B', sk: ['e_fire', 'e_firewave', 'e_heal', 'e_callimps'], boss: true },
+  arch1: { n: 'The Regent', fam: 'cult', hp: 95, atk: 6, agi: 4, arm: 2, ward: 2, die: 10, row: 'F', sk: ['e_hit', 'e_crush', 'e_curse', 'e_rally', 'e_callimps'], boss: true, next: 'arch2' },
+  arch2: { n: 'The Regent Unbound', fam: 'cult', hp: 100, atk: 7, agi: 4, arm: 1, ward: 4, die: 11, row: 'F', sk: ['e_deathbolt', 'e_breath', 'e_drain', 'e_raise', 'e_tail'], boss: true },
   wyrm: { n: 'Wyrm', fam: 'cult', hp: 110, atk: 6, agi: 3, arm: 3, ward: 2, die: 10, row: 'F', sk: ['e_hit', 'e_breath', 'e_tail'], boss: true }
 };
 function enemyUnit(S, key, lv, k, n) {
@@ -343,9 +363,11 @@ function damage(att, sk, t, roll, crit) {
   if (sk.holy && t.fam === 'undead') m *= 1.5;
   if (t.fam === 'cult' && has(t, 'Stunned')) m *= 1.5;
   if (t.ether && phys) m *= 0.5;
+  if (att.fx.lowhp && att.hp / att.max < 0.5) m *= 1 + att.fx.lowhp; if (att.fx.exec && t.hp / t.max < 0.3) m *= 1 + att.fx.exec; if (att.fx.aoe && sk.tg !== 'one') m *= 1 + att.fx.aoe;
+  for (const [vs, v] of att.fx.vs || []) if (has(t, vs)) m *= 1 + v;
   if (crit) m *= att.w.assassin ? 2 : 1.5;
-  const armour = sk.flat !== undefined ? 0 : phys ? (has(t, 'Exposed') || att.w.pierce ? 0 : t.arm) : t.ward;
-  let d = Math.max(1, Math.round(base * m) - armour); if (has(t, 'Guard')) d = Math.max(1, Math.round(d / 2));
+  const armour = sk.flat !== undefined ? 0 : Math.max(0, (phys ? (has(t, 'Exposed') || att.w.pierce ? 0 : t.arm) : t.ward) - (att.fx.pen || 0));
+  let d = Math.max(1, Math.round(base * m) - armour); if (has(t, 'Guard')) d = Math.max(1, Math.round(d / 2)); if (t.fx.dr) d = Math.max(1, Math.round(d * (1 - t.fx.dr)));
   return { d, payoff };
 }
 const dieOf = (att, sk) => skillType(att, sk) === 'spell' ? att.w.sp : att.w.die;
@@ -375,19 +397,22 @@ function hurt(S, C, t, d, src) {
     if (t.side === 'H' && C.n === 1 && !C.grit) { C.grit = true; t.hp = Math.round(t.max * 0.3); say(C, `${t.name} staggers, grits their teeth and fights on. (A lone hero gets one second wind per fight.)`); }
     else if (t.side === 'H' && t.fx.phoenix && !t.used.phoenix) { t.used.phoenix = true; t.hp = Math.round(t.max * 0.25); say(C, `${t.name}'s Phoenix Feather burns away, and ${t.name} fights on.`); }
     else if (t.side === 'H') { t.down = true; const h = S.party[t.hi]; if (h.wounds < 4) h.wounds++; say(C, `${t.name} is down!`); S.stats.downs++; }
+    else if (EN[t.key] && EN[t.key].next) { const nu = enemyUnit(S, EN[t.key].next, C.lv + 0.5, 0, C.n); Object.assign(t, nu, { id: t.id, row: t.row, name: S.q.name + ', Unbound' }); say(C, `${S.q.name} falls, and rises again, changed. The true fight begins.`); }
     else { say(C, `${t.name} is destroyed.`); S.stats.kills++; } }
 }
 function heal(C, t, v) { const a = Math.min(t.max - t.hp, Math.max(0, Math.round(v))); t.hp += a; return a; }
 function strike(S, C, att, sk, t, forceCrit, scale) {
   const need = hitNeed(att, sk, t), r = die(S, 20), ty = skillType(att, sk);
   if (r < need || (r === 1 && !sk.sure && sk.flat === undefined)) { say(C, `${att.name} uses ${sk.n} on ${t.name}: rolled ${r}, needed ${need}. Miss.`); C.fx.push({ id: t.id, miss: 1 }); return 0; }
-  const crit = sk.flat === undefined && (forceCrit || r >= 20 - (att.fx.crit || 0) || (att.w.assassin && ty !== 'spell' && (has(t, 'Marked') || has(t, 'Stunned'))));
+  const opener = sk.flat === undefined && att.fx.opener && !att.used.opener; if (opener) att.used.opener = true;
+  const crit = sk.flat === undefined && (forceCrit || opener || r >= 20 - (att.fx.crit || 0) || (att.w.assassin && ty !== 'spell' && (has(t, 'Marked') || has(t, 'Stunned'))));
   let { d, payoff } = damage(att, sk, t, die(S, dieOf(att, sk)), crit); if (scale) d = Math.max(1, Math.round(d * scale));
   say(C, `${att.name} uses ${sk.n} on ${t.name}: rolled ${r} (needed ${need})${crit ? ', critical' : ''}${payoff ? ', combo' : ''}. ${d} damage.`);
   C.fx.push({ id: t.id, d, crit, payoff }); if (payoff) S.stats.combos++;
   if (payoff && sk.pay.consume) for (const s of sk.pay.s) delete t.states[s];
-  hurt(S, C, t, d, att);
-  if (up(t)) { for (const [s, turns, ch] of sk.ap || []) if (rnd(S) < ch && addState(C, t, s, turns, att)) say(C, `${t.name} is ${s}.`);
+  const burning = has(t, 'Burning'); hurt(S, C, t, d, att);
+  if (!up(t) && up(att)) { if (att.fx.killHeal) heal(C, att, att.max * att.fx.killHeal); if (att.fx.spread && burning) { const o = living(C, other(att.side)).find(u => !has(u, 'Burning')); if (o && addState(C, o, 'Burning', 3, att)) say(C, `The fire leaps to ${o.name}.`); } }
+  if (up(t)) { for (const [s, turns, ch] of sk.ap || []) if (rnd(S) < ch + (att.fx.chance || 0) && addState(C, t, s, turns, att)) say(C, `${t.name} is ${s}.`);
     if (payoff && sk.pay.ap && addState(C, t, sk.pay.ap[0], sk.pay.ap[1], att)) say(C, `${t.name} is ${sk.pay.ap[0]}.`);
     if (sk.flat === undefined) for (const [ps, ch, only] of att.fx.procs || []) if ((!only || ty === only) && !has(t, ps) && rnd(S) < ch && addState(C, t, ps, PROC_T[ps], att)) say(C, `${att.name}'s gear leaves ${t.name} ${ps}.`); }
   if (t.fx.thorns && ty === 'melee' && up(att)) { say(C, `${att.name} takes ${t.fx.thorns} from thorns.`); hurt(S, C, att, t.fx.thorns); }
@@ -490,6 +515,8 @@ function startCombat(S, enc) {
   if (!C.units.some(u => u.side === 'E' && u.row === 'F')) C.units.find(u => u.side === 'E' && !u.boss || true).row = 'F';
   const dup = {}; for (const u of C.units) if (u.side === 'E') dup[u.name] = (dup[u.name] || 0) + 1; const seen = {}; for (const u of C.units) if (u.side === 'E' && dup[u.name] > 1) { seen[u.name] = (seen[u.name] || 0) + 1; u.name += ' ' + 'ABCDEF'[seen[u.name] - 1]; }
   for (const u of C.units) if (u.side === 'H' && up(u)) { if (u.fx.startGuard) u.states.Guard = { t: 1, fresh: true }; if (u.fx.startTaunt) u.states.Taunt = { t: 2, fresh: true }; if (u.fx.startHidden) u.states.Hidden = { t: 2, fresh: true }; }
+  const aura = {}; for (const u of C.units) if (u.side === 'H' && u.fx.aura) mergeFx(aura, u.fx.aura); for (const u of C.units) if (u.side === 'H') { u.fx = mergeFx({ ...u.fx, immune: (u.fx.immune || []).slice() }, aura); u.arm += aura.arm || 0; }
+  for (const u of C.units) if (u.boss && EN[u.key].next) u.name = S.q.name;
   const mod = S.nextMod; S.nextMod = null;
   if (mod === 'ambush') { C.first = 'H'; for (const u of living(C, 'E')) { u.hp = Math.round(u.hp * 0.85); u.states.Exposed = { t: 2 }; } say(C, 'You catch them off guard: the enemy starts hurt and Exposed, and you act first.'); }
   if (mod === 'surprised') { C.first = 'E'; say(C, 'You are caught off guard: the enemy acts first.'); }
@@ -500,14 +527,19 @@ function startCombat(S, enc) {
 }
 function endCombat(S) {
   const C = S.C; for (const u of C.units) if (u.side === 'H') { const h = S.party[u.hi]; h.row = u.row; h.hp = u.down ? 0 : u.hp; }
-  if (C.over === 'lose') { S.screen = 'end'; S.result = 'defeat'; S.C = null; return; }
+  if (C.over === 'lose') { S.C = null; if (S.camp) chapterEnd(S, false); else { S.screen = 'end'; S.result = 'defeat'; } return; }
   for (const h of S.party) { const m = maxHp(h); h.hp = h.hp <= 0 ? Math.round(m * 0.25) : Math.min(m, h.hp + Math.round(m * (S.diff ? K.vetHeal : K.heroHeal))); }
   const node = S.map[S.pos], big = C.boss ? 3 : C.elite ? 1.8 : 1; S.C = null;
-  if (C.boss) { S.screen = 'end'; S.result = 'victory'; S.gold += 100; return; }
-  const gold = Math.round((10 + 6 * node.act + ri(S, 8)) * big); S.gold += gold; S.xp += Math.round(10 * big);
-  S.loot = { gold, xp: Math.round(10 * big), items: rollLoot(S, node.act + (C.elite ? 1 : 0)) }; S.screen = 'loot';
-  if (node.lt) { const sp = rollSet(S, node.act + 1); if (sp) S.loot.items[0] = sp; }
+  if (C.boss && !S.camp) { S.screen = 'end'; S.result = 'victory'; S.gold += 100; return; }
+  const P = pw(S), gold = Math.round((10 + 6 * P + ri(S, 8)) * big); S.gold += gold; S.xp += Math.round(10 * big);
+  S.loot = { gold, xp: Math.round(10 * big), items: rollLoot(S, Math.round(P) + (C.elite || C.boss ? 1 : 0)) }; S.screen = 'loot';
+  if (node.lt) { const sp = rollSet(S, Math.round(P) + 1); if (sp) S.loot.items[0] = sp; }
 }
+
+// How far along the party is, on the one-shot's scale of acts (1 to 3). In a campaign it keeps climbing with the chapters.
+const pw = S => S.camp ? S.camp.ch + (S.screen !== 'town' && S.pos >= 0 && S.map[S.pos].act > 1 ? 0.5 : 0) : S.pos >= 0 ? S.map[S.pos].act : 1;
+const maxTier = S => S.camp ? Math.min(5, S.camp.ch + 1) : 3, maxLevel = S => S.camp ? 10 : 5;
+const evAct = (S, n) => !S.camp ? n.act : n.act > 1 ? 3 : S.camp.ch <= 2 ? 1 : 2;
 
 // ---------- loot, shops, rest ----------
 function rollAffixes(S, it, n) {
@@ -519,12 +551,12 @@ const RAR_W = [[0, 0, 0, 0], [55, 33, 11, 1], [35, 38, 22, 5], [20, 35, 32, 13],
 function rollRarity(S, lvl) { const w = RAR_W[clamp(lvl, 1, 4)]; let r = rnd(S) * 100; for (let k = 0; k < 4; k++) { r -= w[k]; if (r < 0) return k; } return 0; }
 function rollSet(S, tier) {
   const owned = {}; for (const g of S.party.flatMap(h => Object.values(h.gear)).concat(S.stash)) if (g && g.set) (owned[g.set] = owned[g.set] || new Set()).add(g.pi);
-  const opts = []; for (const k of Object.keys(SETS)) SETS[k].pieces.forEach((p, pi) => { if (owned[k] && owned[k].has(pi)) return; const it = mkSet(k, pi, clamp(tier, 2, 3)); if (S.party.some(h => canUse(h, it))) opts.push([it, owned[k] ? 14 : 1]); });
+  const opts = []; for (const k of Object.keys(SETS)) SETS[k].pieces.forEach((p, pi) => { if (owned[k] && owned[k].has(pi)) return; const it = mkSet(k, pi, clamp(tier, 2, maxTier(S))); if (S.party.some(h => canUse(h, it))) opts.push([it, owned[k] ? 14 : 1]); });
   if (!opts.length) return null; let r = rnd(S) * opts.reduce((a, o) => a + o[1], 0); for (const o of opts) { r -= o[1]; if (r < 0) return o[0]; } return opts[0][0];
 }
 // lvl: act of the stop, +1 for elites; it sets base quality, rarity odds and the chance of a set piece
 function rollGear(S, lvl, kind) {
-  const tier = clamp(lvl, 1, 3);
+  const tier = S.camp ? clamp(Math.ceil(lvl * 0.75), 1, 5) : clamp(lvl, 1, 3);
   if (!kind && rnd(S) < [0, 0.05, 0.11, 0.16, 0.26][clamp(lvl, 1, 4)]) { const it = rollSet(S, tier); if (it) return it; }
   for (let tries = 0; tries < 30; tries++) { const r = kind || pick(S, ['weapon', 'weapon', 'armor', 'shield']); let it;
     if (r === 'weapon') it = mkWeapon(pick(S, Object.keys(WT)), tier); else if (r === 'armor') it = mkArmor(pick(S, Object.keys(ARMOR)), tier); else it = mkShield(tier, pick(S, Object.keys(OFF)));
@@ -539,21 +571,21 @@ function rollLoot(S, lvl) { const up1 = () => lvl + (rnd(S) < 0.2 ? 1 : 0); retu
 function addBag(S, it) { const b = S.bag.find(x => x.id === it.id); if (b) b.qty += it.qty; else S.bag.push({ id: it.id, qty: it.qty }); }
 function give(S, it, hi) { if (it.k === 'cons') { addBag(S, it); return true; } if (hi < 0) { S.stash.push(it); return true; } const h = S.party[hi]; if (!h || !canUse(h, it)) return false; equip(S, h, it); return true; }
 function takeLoot(S, k, hi) { if (k < 0) S.gold += 10; else if (!give(S, S.loot.items[k], hi === undefined ? -1 : hi)) return false; S.loot = null; finishNode(S); return true; }
-function openShop(S) { const t = S.map[S.pos].act, items = [rollGear(S, t), rollGear(S, t), rollGear(S, t + 1), rollTrinket(S, t), rollTrinket(S, t + 1), mkCons('potion', 1), mkCons('salts', 1), rollCons(S, t, 1)];
-  const disc = S.q.flags.helped ? 0.8 : 1; for (const it of items) it.price = Math.round(it.price * (0.8 + 0.2 * t) * disc); S.shop = { items, healCost: 10 + 5 * t }; S.screen = 'shop'; }
+function openShop(S) { const t = Math.round(pw(S)), items = [rollGear(S, t), rollGear(S, t), rollGear(S, t + 1), rollTrinket(S, t), rollTrinket(S, t + 1), mkCons('potion', 1), mkCons('salts', 1), rollCons(S, t, 1)];
+  const disc = S.q.flags.helped ? 0.8 : 1; for (const it of items) it.price = Math.round(it.price * (0.8 + 0.2 * Math.min(3, t)) * disc); S.shop = { items, healCost: 10 + 5 * t }; S.screen = 'shop'; }
 function buy(S, k, hi) { const it = S.shop.items[k]; if (!it || it.sold || S.gold < it.price) return false; if (it.k !== 'cons' && hi >= 0 && !(S.party[hi] && canUse(S.party[hi], it))) return false; S.gold -= it.price; give(S, it, hi); it.sold = true; return true; }
 // the smith works on equipped gear: raise its quality, add an enchantment, or reroll the ones it has
 const SMITH = { upgrade: 'Improve', enchant: 'Enchant', reforge: 'Reforge' };
-function smithCost(it, op) { if (!it || it.k === 'cons') return 0;
-  if (op === 'upgrade') return it.k !== 'trinket' && it.tier < 3 ? [30, 60][it.tier - 1] : 0;
+function smithCost(it, op, S) { if (!it || it.k === 'cons') return 0;
+  if (op === 'upgrade') return it.k !== 'trinket' && it.tier < (S ? maxTier(S) : 3) ? [30, 60, 140, 260][it.tier - 1] : 0;
   if (it.set || it.k === 'trinket') return 0; const n = (it.afx || []).length; return op === 'enchant' ? (n < 3 ? [30, 50, 75][n] : 0) : n ? 20 : 0; }
-function smith(S, hi, slot, op) { const h = S.party[hi], it = h && h.gear[slot], cost = smithCost(it, op); if (!cost || S.gold < cost || !S.shop) return false; S.gold -= cost;
+function smith(S, hi, slot, op) { const h = S.party[hi], it = h && h.gear[slot], cost = smithCost(it, op, S); if (!cost || S.gold < cost || !S.shop) return false; S.gold -= cost;
   const m0 = maxHp(h); if (op === 'upgrade') { it.tier++; finish(it); } else if (op === 'enchant') { const want = it.afx.length + 1, keep = it.afx.slice(); for (let k = 0; k < 40; k++) { rollAffixes(S, it, want); if (keep.every(a => it.afx.includes(a))) break; it.afx = keep; } if (it.afx.length < want) { rollAffixes(S, it, want); } }
   else { const old = it.afx.join(); for (let k = 0; k < 10; k++) { rollAffixes(S, it, it.afx.length); if (it.afx.join() !== old) break; } }
   h.hp = clamp(h.hp + Math.max(0, maxHp(h) - m0), 1, maxHp(h)); S.stats.smith = (S.stats.smith || 0) + 1; return true; }
 function buyHeal(S) { if (S.gold < S.shop.healCost) return false; S.gold -= S.shop.healCost; for (const h of S.party) { if (h.wounds) h.wounds--; h.hp = maxHp(h); } return true; }
 function doRest(S, k) { for (const h of S.party) { if (k === 0 && h.wounds) h.wounds--; const m = maxHp(h); h.hp = Math.min(m, h.hp + Math.round(m * (k === 0 ? 0.6 : 0.25))); }
-  if (k === 1) { addBag(S, rollCons(S, S.map[S.pos].act, 1)); addBag(S, mkCons('potion', 1)); } if (k === 2) S.xp += 8; finishNode(S); }
+  if (k === 1) { addBag(S, rollCons(S, Math.round(pw(S)), 1)); addBag(S, mkCons('potion', 1)); } if (k === 2) S.xp += 8; finishNode(S); }
 
 // ---------- quest generation ----------
 const VILLAINS = [
@@ -703,18 +735,18 @@ function finalText(S) { const f = S.q.flags, p = [`${S.q.lair} at last. Beyond t
   if (f.spared) p.push('The scout you spared marked the quiet ways in.'); if (f.cruel) p.push('The road behind you is not proud of you.'); if (f.helped) p.push(`In ${S.q.town} they are lighting candles for you.`);
   if (f.betrayed) p.push(`${S.q.patron} will answer for this, after.`); if (f.puppet) p.push(`Remember: the true enemy is the ${S.q.relic}.`); if (f.mercy) p.push('You mean to take the villain alive.'); if (f.allies) p.push('Horns sound at the outer gate: the other company has kept its word.'); if (f.toolate) p.push('The sky is turning faster now.');
   if (f.freed) p.push('Freed prisoners are loose in the halls behind you.'); return p.join(' '); }
-function eventText(S, e) { const v = VILLAINS[S.q.vi]; return fill(S, e.x.replace('{FINAL}', finalText(S)).replace('{W}', v.title).replace('{MO}', S.q.motive)); }
+function eventText(S, e) { return fill(S, e.x.replace('{FINAL}', finalText(S)).replace('{W}', S.q.vtitle).replace('{MO}', S.q.motive)); }
 function pickEvent(S, act) {
   const ok = e => !S.q.used.includes(e.id) && !(e.act && !e.act.includes(act)) && e.id !== 'hook' && (!e.req || S.q.flags[e.req]);
   const due = EVENTS.filter(e => e.req && ok(e)), gen = EVENTS.filter(e => !e.req && ok(e));
   const plot = gen.filter(e => e.act); const e = due.length && rnd(S) < 0.7 ? pick(S, due) : plot.length && rnd(S) < 0.45 ? pick(S, plot) : pick(S, gen.length ? gen : EVENTS.filter(x => !x.act && !x.req)); return e.id;
 }
-const baseDC = (S, c) => 9 + 2 * S.map[S.pos].act + (c.dc || 0);
+const baseDC = (S, c) => Math.round(9 + 2 * pw(S) + (c.dc || 0));
 function checkInfo(S, c) { let hi = 0; S.party.forEach((h, i) => { if (heroStat(h, c.s) > heroStat(S.party[hi], c.s)) hi = i; });
   const stat = heroStat(S.party[hi], c.s), need = clamp(baseDC(S, c) - stat, 2, 20); return { hi, stat, need, odds: (21 - need) / 20 }; }
 function openEvent(S, id) { S.q.used.push(id); S.ev = { id, result: null }; S.screen = 'event'; }
 function applyFx(S, o, hi) {
-  const act = S.map[S.pos].act, sc = 0.7 + 0.3 * act, got = [];
+  const act = Math.round(pw(S)), sc = 0.7 + 0.3 * pw(S), got = [];
   if (o.gold) { const g = Math.round(o.gold * sc); S.gold = Math.max(0, S.gold + g); got.push(`${g > 0 ? '+' : ''}${g} gold`); }
   if (o.healP) { for (const h of S.party) h.hp = Math.min(maxHp(h), h.hp + Math.round(maxHp(h) * o.healP)); got.push('the party is healed'); }
   if (o.hurtP) { for (const h of S.party) h.hp = Math.max(1, h.hp - Math.round(maxHp(h) * o.hurtP)); got.push('everyone is hurt'); }
@@ -729,7 +761,7 @@ function applyFx(S, o, hi) {
 }
 function chooseEvent(S, ci) {
   const e = EV[S.ev.id], c = e.c[ci]; if (S.ev.result) return false; let o = c, roll = null, hi = -1;
-  if (c.cost) { const cost = Math.round(c.cost * (0.7 + 0.3 * S.map[S.pos].act)); if (S.gold < cost) return false; S.gold -= cost; }
+  if (c.cost) { const cost = Math.round(c.cost * (0.7 + 0.3 * pw(S))); if (S.gold < cost) return false; S.gold -= cost; }
   if (c.s) { const info = checkInfo(S, c), r = die(S, 20); hi = info.hi; const tot = r + info.stat, dc = baseDC(S, c);
     const out = r === 20 || (tot >= dc && r !== 1) ? 'ok' : tot >= dc - 4 && c.mid ? 'mid' : 'bad'; o = c[out]; roll = { hi, r, stat: info.stat, dc, out, s: c.s }; S.stats.checks++; if (out === 'ok') S.stats.passed++; }
   if (c.random) o = pick(S, c.random);
@@ -746,14 +778,15 @@ function genMap(S) {
   const nodes = [], layers = []; let x = 0;
   const add = (act, type, extra) => { const n = { id: nodes.length, act, x, type, next: [], lane: 1, ...extra }; nodes.push(n); return n.id; };
   const single = (act, type, extra) => { layers.push([add(act, type, extra)]); x++; };
-  for (let act = 1; act <= 3; act++) {
+  const acts = S.camp ? 2 : 3;
+  for (let act = 1; act <= acts; act++) {
     if (act === 1) single(1, 'event', { ev: 'hook' });
     const wild = () => pick(S, act > 1 ? ['elite', 'event', 'fight'] : ['event', 'fight']);
     const decks = [['fight', 'fight', 'event'], ['fight', 'event', 'shop'], ['fight', 'event', wild()], ['rest', rnd(S) < 0.5 ? 'fight' : 'event', rnd(S) < 0.5 ? 'shop' : 'fight']];
     for (const deck of decks) { layers.push(shuffle(S, deck).map((t, lane) => add(act, t, { lane }))); x++; }
-    if (act === 2) single(2, 'event', { ev: 'tw_' + S.q.twist });
-    if (act === 3) single(3, 'event', { ev: 'lair' });
-    single(act, act === 3 ? 'boss' : 'elite', { lt: true });
+    if (act === 2 && !S.camp) single(2, 'event', { ev: 'tw_' + S.q.twist });
+    if (act === acts) single(act, 'event', { ev: 'lair' });
+    single(act, act === acts ? 'boss' : 'elite', { lt: true });
   }
   for (let i = 0; i + 1 < layers.length; i++) { const a = layers[i], b = layers[i + 1];
     if (a.length === 1 || b.length === 1) { for (const id of a) nodes[id].next = b.slice(); continue; }
@@ -763,45 +796,90 @@ function genMap(S) {
   const perAct = [0, 0, 0, 0]; for (const l of layers) perAct[nodes[l[0]].act]++;
   const seenCol = [0, 0, 0, 0];
   for (const l of layers) { const act = nodes[l[0]].act, col = seenCol[act]++, f = perAct[act] === 1 ? 0.5 : col / (perAct[act] - 1), fx = act === 2 ? 1 - f : f;
-    for (const id of l) { const n = nodes[id], one = l.length === 1; n.px = Math.round(95 + fx * 770 + (one ? 0 : (rnd(S) - 0.5) * 30) + (act > 1 && col === 0 ? (act === 2 ? -1 : 1) * (2 - n.lane) * 46 : 0)); n.py = Math.round(140 + (act - 1) * 200 + (one ? 0 : (n.lane - 1) * 62 + (rnd(S) - 0.5) * 18)); } }
-  S.map = nodes; S.layers = layers.length;
+    for (const id of l) { const n = nodes[id], one = l.length === 1; n.px = Math.round(95 + fx * 770 + (one ? 0 : (rnd(S) - 0.5) * 30) + (act > 1 && col === 0 ? (act === 2 ? -1 : 1) * (2 - n.lane) * 46 : 0)); n.py = Math.round((acts === 2 ? 190 + (act - 1) * 280 : 140 + (act - 1) * 200) + (one ? 0 : (n.lane - 1) * (acts === 2 ? 78 : 62) + (rnd(S) - 0.5) * 18)); } }
+  S.map = nodes; S.layers = layers.length; S.acts = acts;
 }
 function options(S) { return S.pos < 0 ? [0] : S.map[S.pos].next; }
 function encounter(S, kind) {
-  const node = S.map[S.pos], act = node.act, n = S.party.length, prog = S.map.filter(m => m.act === act && m.x < node.x && m.lane === 1).length / 14, lv = act * 1.5 - 0.5 + prog;
+  const node = S.map[S.pos], act = node.act, n = S.party.length, prog = S.map.filter(m => m.act === act && m.x < node.x && m.lane === 1).length / 14, P = pw(S),
+    lv = S.camp ? 0.875 * (1 + (S.camp.ch - 1) * 1.9 + (act - 1) * 0.95 + prog * 2) + 0.125 + (S.camp.ch <= 5 ? K.campLv[S.camp.ch - 1] : K.campLv[4] + 0.9 * (S.camp.ch - 5)) : act * 1.5 - 0.5 + prog;
   const fam = kind === 'boss' || node.lt || rnd(S) < 0.7 ? S.q.fam : pick(S, ['beast', 'bandit']);
-  const pool = Object.keys(EN).filter(k => EN[k].fam === fam && !EN[k].elite && !EN[k].boss && (EN[k].act || 1) <= act), list = [];
+  const pool = Object.keys(EN).filter(k => EN[k].fam === fam && !EN[k].elite && !EN[k].boss && (EN[k].act || 1) <= P), list = [];
   if (kind === 'boss') { list.push(S.q.boss); for (let k = 0; k < Math.max(0, n - 2); k++) list.push(pick(S, pool)); }
-  else if (kind === 'elite') { const el = node.lt ? S.q.lt : Object.keys(EN).find(k => EN[k].fam === fam && EN[k].elite); list.push(el); for (let k = 0; k < Math.max(0, n - 1 - (act === 1 ? 1 : 0)); k++) list.push(pick(S, pool)); }
-  else { const cnt = clamp(n + (rnd(S) < 0.3 + 0.1 * act ? 1 : 0) - (act === 1 && node.x <= 1 ? 1 : 0), 1, 5); for (let k = 0; k < cnt; k++) list.push(pick(S, pool)); }
+  else if (kind === 'elite') { const el = node.lt ? S.q.lt : Object.keys(EN).find(k => EN[k].fam === fam && EN[k].elite); list.push(el); for (let k = 0; k < Math.max(0, n - 1 - (P < 2 ? 1 : 0)); k++) list.push(pick(S, pool)); }
+  else { const cnt = clamp(n + (rnd(S) < 0.3 + 0.1 * Math.min(3, P) ? 1 : 0) - (P === 1 && node.x <= 1 ? 1 : 0), 1, 5); for (let k = 0; k < cnt; k++) list.push(pick(S, pool)); }
   return { kind, lv, list };
 }
 function travel(S, id) {
   if (S.screen !== 'map' || !options(S).includes(id)) return false; S.pos = id; const n = S.map[id]; n.seen = true; S.stats.nodes++;
   if (n.type === 'fight' || n.type === 'elite' || n.type === 'boss') startCombat(S, encounter(S, n.type === 'fight' ? 'normal' : n.type));
-  else if (n.type === 'event') openEvent(S, n.ev || pickEvent(S, n.act));
+  else if (n.type === 'event') openEvent(S, n.ev || pickEvent(S, evAct(S, n)));
   else if (n.type === 'shop') openShop(S); else S.screen = 'rest';
   return true;
 }
-const XP_AT = [0, 16, 38, 64, 96];
+const XP_AT = [0, 16, 38, 64, 96], CAMP_XP = [0, 22, 56, 106, 162, 224, 291, 364, 442, 526];
+const xpAt = (S, lv) => (S.camp ? CAMP_XP : XP_AT)[lv];
+const lvlDue = S => { const lv = S.party[0].level; return lv < maxLevel(S) && S.xp >= xpAt(S, lv); };
+function afterNode(S) { if (S.camp && S.pos >= 0 && S.map[S.pos].type === 'boss' && S.map[S.pos].done) chapterEnd(S, true); else S.screen = 'map'; }
 function finishNode(S) {
   S.map[S.pos].done = true; S.shop = null; S.leader++;
-  const lv = S.party[0].level; if (lv < 5 && S.xp >= XP_AT[lv]) { levelUp(S); return; }
-  S.screen = 'map';
+  if (lvlDue(S)) { levelUp(S); return; }
+  afterNode(S);
 }
 function levelUp(S) {
   const gained = []; for (const h of S.party) { const before = known(h), m0 = maxHp(h); h.level++; h.hp += maxHp(h) - m0; h.hp = Math.min(maxHp(h), h.hp + Math.round(maxHp(h) * 0.2)); gained.push(known(h).filter(k => !before.includes(k))); }
-  S.lvl = { level: S.party[0].level, gained, need: S.party[0].level === 3 ? S.party.map(() => true) : [] }; S.screen = 'levelup';
+  S.lvl = { level: S.party[0].level, gained, need: S.party[0].level === 3 ? S.party.map(() => true) : [], needT: S.party[0].level >= 6 ? S.party.map(h => !!h.sub) : [] }; S.screen = 'levelup';
   S.party.forEach((h, i) => { for (const k of gained[i]) if (h.eq.length < 4) h.eq.push(k); else if (h.ctrl === 'ai') autoEquip(h); });
 }
-function pickSub(S, hi, sub) { const h = S.party[hi]; if (!S.lvl || !S.lvl.need[hi] || !CLASSES[h.cls].subs[sub]) return false; h.sub = sub; S.lvl.need[hi] = false; const sk = CLASSES[h.cls].subs[sub].sk[0]; S.lvl.gained[hi] = [sk];
+function pickSub(S, hi, sub) { const h = S.party[hi]; if (!S.lvl || !S.lvl.need[hi] || !CLASSES[h.cls].subs[sub]) return false; h.sub = sub; S.lvl.need[hi] = false; const sk = CLASSES[h.cls].subs[sub].sk[0]; S.lvl.gained[hi] = [sk]; subGear(h, sub);
   if (h.eq.length < 4) h.eq.push(sk); else { const drop = h.eq.slice().sort((a, b) => SK[a].w - SK[b].w)[0]; if (h.ctrl === 'ai' || SK[drop].w < SK[sk].w) h.eq[h.eq.indexOf(drop)] = sk; }
-  if (sub === 'ranger') { const w = h.gear.w; if (w.type !== 'bow' && w.type !== 'crossbow' && !w.set) h.gear.w = finish({ k: 'weapon', type: 'bow', tier: w.tier, afx: w.afx.slice() }); h.row = 'B'; h.hp = Math.min(h.hp, maxHp(h)); } if (sub === 'warpriest') h.row = 'F'; return true; }
-function closeLevel(S) { if (!S.lvl || S.lvl.need.some(Boolean)) return false; S.lvl = null; const lv = S.party[0].level; if (lv < 5 && S.xp >= XP_AT[lv]) levelUp(S); else S.screen = 'map'; return true; }
+  return true; }
+function subGear(h, sub) { if (sub === 'ranger') { const w = h.gear.w; if (w.type !== 'bow' && w.type !== 'crossbow' && !w.set) h.gear.w = finish({ k: 'weapon', type: 'bow', tier: w.tier, afx: w.afx.slice() }); h.row = 'B'; } if (sub === 'warpriest') h.row = 'F'; if (sub === 'lightbringer') h.row = 'B'; h.hp = Math.min(h.hp, maxHp(h)); }
+function pickTalent(S, hi, c) { if (!S.lvl || !S.lvl.needT[hi] || !setTalent(S, hi, S.lvl.level - 6, c)) return false; S.lvl.needT[hi] = false; return true; }
+function closeLevel(S) { if (!S.lvl || S.lvl.need.some(Boolean) || S.lvl.needT.some(Boolean)) return false; S.lvl = null; if (lvlDue(S)) levelUp(S); else afterNode(S); return true; }
 function setEq(S, hi, ids) { const h = S.party[hi], k = known(h); if (ids.length > 4 || ids.some(x => !k.includes(x)) || new Set(ids).size !== ids.length) return false; h.eq = ids.slice(); return true; }
 
+// ---------- campaign: five chapters against one hidden enemy, then open-ended contracts ----------
+const ARCH = [{ name: 'Vharos', title: 'the Pale Regent', sigil: 'a crowned skull', hold: 'the Black Citadel' }, { name: 'Queen Ysolde', title: 'the Winter Queen', sigil: 'a white stag', hold: 'the Frozen Court' }, { name: 'Malachar', title: 'the Ash Prophet', sigil: 'a burning eye', hold: 'the Cinder Throne' }];
+const TRAIN = { talent: 15, sub: 80 };
+function newCampaign(seed, seats, diff) {
+  const S = newRun(seed, seats, diff); const a = ri(S, ARCH.length);
+  S.camp = { ch: 1, arch: a, order: shuffle(S, VILLAINS.map((v, i) => i)).slice(0, 4), done: [], wipes: 0, last: null, saga: false,
+    lore: ['The roads of the realm have grown dangerous all at once, as if by arrangement. You have sworn to find out why, one warlord at a time.'] };
+  S.gold = 30; enterTown(S); return S;
+}
+function campQuest(S) {
+  const c = S.camp, A = ARCH[c.arch]; let v, vi;
+  if (c.ch === 5) { const fam = pick(S, ['undead', 'cult', 'bandit']); v = { name: A.name, title: A.title, fam, boss: 'arch1', lt: Object.keys(EN).find(k => EN[k].fam === fam && EN[k].elite), m: `${A.name}'s host`, lair: [A.hold] }; vi = -1; }
+  else { vi = c.ch <= 4 ? c.order[c.ch - 1] : ri(S, VILLAINS.length); v = VILLAINS[vi]; }
+  const q = { vi, name: v.name, vtitle: v.title, fam: v.fam, boss: v.boss, lt: v.lt, minions: v.m, lair: pick(S, v.lair), region: pick(S, REGIONS), town: pick(S, TOWNS), patron: pick(S, PATRONS), relic: pick(S, RELICS), twist: 'none', bossHp: 0, flags: {}, used: [] };
+  q.motive = c.ch === 5 ? 'has been behind every warlord you have faced, and is nearly ready to take the realm whole' : c.ch === 4 ? fill({ q }, `is ${A.name}'s champion, and holds the last road to ${A.hold}`) : fill({ q }, pick(S, MOTIVES).t);
+  q.title = (c.ch <= 5 ? `Chapter ${c.ch}: ` : `Contract ${c.ch - 5}: `) + `${v.title.replace(/^the /, 'The ')} of ${q.lair}`; return q;
+}
+function townStock(S) { const t = S.camp.ch, items = [rollGear(S, t), rollGear(S, t), rollGear(S, t), rollGear(S, t + 1), rollGear(S, t + 1), rollTrinket(S, t), rollTrinket(S, t + 1), rollTrinket(S, t + 1), mkCons('potion', 2), mkCons('salts', 1), rollCons(S, t, 1), rollCons(S, t, 1)];
+  for (const it of items) it.price = Math.round(it.price * 1.2); return { items, healCost: 10 + 10 * t, town: true }; }
+function enterTown(S) { S.screen = 'town'; S.pos = -1; S.C = null; S.ev = null; S.loot = null; S.lvl = null; S.nextMod = null; S.q = campQuest(S); S.map = []; S.shop = townStock(S); for (const h of S.party) h.hp = maxHp(h); }
+function startChapter(S) { if (S.screen !== 'town') return false; S.shop = null; genMap(S); S.pos = -1; S.screen = 'map'; return true; }
+function chapterEnd(S, win) {
+  const c = S.camp, q = S.q, A = ARCH[c.arch], last = { win, ch: c.ch, title: q.title, lines: [] };
+  if (!win) { c.wipes++; const lost = S.gold >> 1; S.gold -= lost; for (const h of S.party) { if (h.wounds < 3) h.wounds++; } last.lines.push(`The party is beaten back from ${q.lair} and carried home to lick its wounds. ${lost} gold is lost on the road, and everyone returns wounded. ${q.name} still stands.`); }
+  else { const pay = 50 + 30 * c.ch; S.gold += pay; last.lines.push(`${q.name} is defeated, and ${q.lair} stands empty. ${q.patron} pays the promised ${pay} gold.`);
+    const clue = c.ch === 1 ? `Among ${q.name}'s things you find a seal you do not know: ${A.sigil}. Someone was paying for all this.`
+      : c.ch === 2 ? `${q.name} carried unsigned orders under the same seal, ${A.sigil}. They speak of gathering strength "for the hour that is coming".`
+      : c.ch === 3 ? `With a last breath ${q.name} gives up a name: ${A.name}, ${A.title}. Every warlord you have fought was a servant, and the master sits in ${A.hold}.`
+      : c.ch === 4 ? `${A.name}'s champion is dead. The road to ${A.hold} lies open, and nothing stands between you and the one who started all of this.`
+      : c.ch === 5 ? `${A.name}, ${A.title}, is no more. The seal of ${A.sigil} is broken, and the realm is free. There will always be other troubles, and there is always a notice board.`
+      : `Another contract closed. The notice board never stays empty for long.`;
+    last.lines.push(clue); c.lore.push(`${q.title}. ${clue}`); c.done.push({ ch: c.ch, name: q.name, title: q.vtitle, level: S.party[0].level }); if (c.ch === 5) c.saga = true; }
+  c.last = last; S.screen = 'chapter';
+}
+function closeChapter(S) { if (S.screen !== 'chapter') return false; if (S.camp.last.win) S.camp.ch++; enterTown(S); return true; }
+// the training hall: change a talent, or retrain into the other path
+function retrain(S, hi, k, c) { const h = S.party[hi]; if (S.screen !== 'town' || !h || !h.tal || h.tal[k] === c || h.tal[k] === undefined || S.gold < TRAIN.talent || !setTalent(S, hi, k, c)) return false; S.gold -= TRAIN.talent; h.hp = Math.min(h.hp, maxHp(h)); return true; }
+function changeSub(S, hi) { const h = S.party[hi]; if (S.screen !== 'town' || !h || !h.sub || S.gold < TRAIN.sub) return false; S.gold -= TRAIN.sub; h.sub = Object.keys(CLASSES[h.cls].subs).find(k => k !== h.sub); subGear(h, h.sub); autoEquip(h); h.hp = Math.min(h.hp, maxHp(h)); return true; }
+
 function newRun(seed, seats, diff) {
-  const S = { v: 3, diff: diff ? 1 : 0, seed: seed | 0, seed0: seed | 0, party: seats.map(newHero), gold: 20, xp: 0, bag: [{ id: 'potion', qty: 2 }], stash: [], pos: -1, screen: 'map', C: null, ev: null, loot: null, shop: null, lvl: null, nextMod: null, leader: 0, result: null,
+  const S = { v: 4, diff: diff ? 1 : 0, seed: seed | 0, seed0: seed | 0, party: seats.map(newHero), gold: 20, xp: 0, bag: [{ id: 'potion', qty: 2 }], stash: [], pos: -1, screen: 'map', C: null, ev: null, loot: null, shop: null, lvl: null, nextMod: null, leader: 0, result: null,
     stats: { fights: 0, kills: 0, downs: 0, combos: 0, checks: 0, passed: 0, nodes: 0 } };
   for (let k = 0; k < 5; k++) rnd(S); S.q = newQuest(S); genMap(S); return S;
 }
@@ -823,23 +901,26 @@ function autoStep(S) {
   if (S.screen === 'combat') { const C = S.C; if (C.over) { endCombat(S); return true; } const u = unit(C, C.cur); return act(S, C, u.side === 'H' ? aiHero(S, C, u) : aiEnemy(S, C, u)); }
   if (S.screen === 'event') { if (!S.ev.result) return chooseEvent(S, aiEventChoice(S)); if (S.ev.result.items.length) return eventGive(S, aiGive(S, S.ev.result.items[0])); return continueEvent(S); }
   if (S.screen === 'loot') { let best = -1, bs = 0.4, who = -1; S.loot.items.forEach((it, k) => { if (it.k === 'cons') { if (0.9 > bs) { bs = 0.9; best = k; who = 0; } return; } const hi = aiGive(S, it); if (hi < 0) return; const h = S.party[hi], s = it.k === 'trinket' ? 1.2 + itemScore(it) * 0.2 : itemScore(it) - itemScore(h.gear[slotOf(h, it)]) + 0.5; if (s > bs) { bs = s; best = k; who = hi; } }); return takeLoot(S, best, who); }
-  if (S.screen === 'shop') { for (let si = S.stash.length - 1; si >= 0; si--) if (aiGive(S, S.stash[si]) < 0) sellStash(S, si); const hurtish = S.party.some(h => h.wounds > 0) || S.party.reduce((a, h) => a + h.hp / maxHp(h), 0) / S.party.length < 0.55; if (hurtish && buyHeal(S)) return true;
-    for (let hi = 0; hi < S.party.length; hi++) { const c = smithCost(S.party[hi].gear.w, 'upgrade'); if (c && S.gold >= c + 10 && smith(S, hi, 'w', 'upgrade')) return true; }
-    for (let k = 0; k < S.shop.items.length; k++) { const it = S.shop.items[k]; if (it.sold || it.price > S.gold) continue; if (it.k === 'cons') { const have = (S.bag.find(b => b.id === it.id) || { qty: 0 }).qty; if ((it.id === 'potion' || it.id === 'salts') && have < 2 && buy(S, k, 0)) return true; continue; }
-      const hi = aiGive(S, it); if (hi < 0) continue; const h = S.party[hi]; if ((it.k === 'trinket' ? !(h.gear.t1 && h.gear.t2) : itemScore(it) > itemScore(h.gear[slotOf(h, it)])) && buy(S, k, hi)) return true; }
-    for (let hi = 0; hi < S.party.length; hi++) for (const [slot, op] of [['w', 'upgrade'], ['a', 'upgrade'], ['w', 'enchant'], ['off', 'upgrade']]) { const c = smithCost(S.party[hi].gear[slot], op); if (c && S.gold >= c + 15 && smith(S, hi, slot, op)) return true; }
-    finishNode(S); return true; }
+  if (S.screen === 'shop') { if (!aiShop(S)) finishNode(S); return true; }
+  if (S.screen === 'town') { if (!aiShop(S)) startChapter(S); return true; }
+  if (S.screen === 'chapter') return closeChapter(S);
   if (S.screen === 'rest') { const frac = S.party.reduce((a, h) => a + h.hp / maxHp(h), 0) / S.party.length; doRest(S, frac < 0.75 || S.party.some(h => h.wounds) ? 0 : 2); return true; }
-  if (S.screen === 'levelup') { S.lvl.need.forEach((n, i) => { if (n) pickSub(S, i, aiSub(S, i)); }); return closeLevel(S); }
+  if (S.screen === 'levelup') { S.lvl.need.forEach((n, i) => { if (n) pickSub(S, i, aiSub(S, i)); }); S.lvl.needT.forEach((n, i) => { if (n) pickTalent(S, i, ri(S, 2)); }); return closeLevel(S); }
   return false;
 }
+function aiShop(S) { for (let si = S.stash.length - 1; si >= 0; si--) if (aiGive(S, S.stash[si]) < 0) sellStash(S, si); const hurtish = S.party.some(h => h.wounds > 0) || S.party.reduce((a, h) => a + h.hp / maxHp(h), 0) / S.party.length < 0.55; if (hurtish && buyHeal(S)) return true;
+    for (let hi = 0; hi < S.party.length; hi++) { const c = smithCost(S.party[hi].gear.w, 'upgrade', S); if (c && S.gold >= c + 10 && smith(S, hi, 'w', 'upgrade')) return true; }
+    for (let k = 0; k < S.shop.items.length; k++) { const it = S.shop.items[k]; if (it.sold || it.price > S.gold) continue; if (it.k === 'cons') { const have = (S.bag.find(b => b.id === it.id) || { qty: 0 }).qty; if ((it.id === 'potion' || it.id === 'salts') && have < 2 && buy(S, k, 0)) return true; continue; }
+      const hi = aiGive(S, it); if (hi < 0) continue; const h = S.party[hi]; if ((it.k === 'trinket' ? !(h.gear.t1 && h.gear.t2) : itemScore(it) > itemScore(h.gear[slotOf(h, it)])) && buy(S, k, hi)) return true; }
+    for (let hi = 0; hi < S.party.length; hi++) for (const [slot, op] of [['w', 'upgrade'], ['a', 'upgrade'], ['w', 'enchant'], ['off', 'upgrade']]) { const c = smithCost(S.party[hi].gear[slot], op, S); if (c && S.gold >= c + 15 && smith(S, hi, slot, op)) return true; }
+    return false; }
 function aiSub(S, i) { const h = S.party[i], subs = Object.keys(CLASSES[h.cls].subs); if (S.forceSub && S.forceSub[i]) return S.forceSub[i];
   if (h.cls === 'priest') return S.party.some((o, j) => j !== i && o.cls === 'priest' && o.sub !== 'warpriest') || S.party.length === 1 ? 'warpriest' : 'lightbringer'; return subs[ri(S, 2)]; }
 function aiEventChoice(S) { const e = EV[S.ev.id]; let best = 0, bs = -9; const frac = S.party.reduce((a, h) => a + h.hp / maxHp(h), 0) / S.party.length;
   e.c.forEach((c, i) => { let s; const val = o => (o.gold || 0) / 12 + (o.healP || 0) * 6 * (1.2 - frac) - (o.hurtP || 0) * 12 - (o.hurtR || 0) * 5 - (o.wound || 0) * 4 + (o.xp || 0) / 4 + (o.item ? 2.5 : 0) + (o.item2 ? 1.5 : 0) - (o.boss || 0) * 30 + (o.next === 'ambush' ? 2 : o.next === 'surprised' ? -2 : o.next ? 1 : 0) + (o.fight ? (frac > 0.7 ? 0.5 : -3) : 0) + (o.flag === 'eliteWeak' || o.flag2 === 'eliteWeak' ? 2 : 0) + (o.flag === 'cruel' || o.flag === 'desecrated' ? -1.5 : 0) + (o.flag === 'helped' || o.flag === 'spared' ? 1 : 0);
     if (c.s) { const { need } = checkInfo(S, c), pOk = (21 - need) / 20, pMid = c.mid ? Math.min(0.2, 1 - pOk) : 0; s = pOk * val(c.ok) + pMid * val(c.mid || {}) + (1 - pOk - pMid) * val(c.bad); }
     else if (c.random) s = c.random.reduce((a, o) => a + val(o), 0) / c.random.length; else s = val(c);
-    if (c.cost) { const cost = Math.round(c.cost * (0.7 + 0.3 * S.map[S.pos].act)); s = S.gold >= cost ? s - cost / 14 : -99; }
+    if (c.cost) { const cost = Math.round(c.cost * (0.7 + 0.3 * pw(S))); s = S.gold >= cost ? s - cost / 14 : -99; }
     if (s > bs) { bs = s; best = i; } }); return best; }
 function aiRoute(S) { const opts = options(S), frac = S.party.reduce((a, h) => a + h.hp / maxHp(h), 0) / S.party.length, w = S.party.reduce((a, h) => a + h.wounds, 0);
   let best = opts[0], bs = -9; for (const id of opts) { const t = S.map[id].type; let s = t === 'rest' ? (frac < 0.6 || w ? 4 : 0.5) : t === 'shop' ? (S.gold >= 45 ? 2.5 : 0.8) + (w && S.gold > 20 ? 1 : 0) : t === 'event' ? 1.8 : t === 'elite' ? (frac > 0.8 && !w ? 2 : -1) : frac > 0.55 ? 2 : 0.6; s += rnd(S) * 0.5; if (s > bs) { bs = s; best = id; } } return best; }

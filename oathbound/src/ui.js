@@ -3,7 +3,8 @@ const $ = id => document.getElementById(id), SAVE = 'oathbound-v1';
 function h(tag, attrs, ...kids) { const e = document.createElement(tag);
   for (const k in attrs || {}) { const v = attrs[k]; if (k === 'class') e.className = v; else if (k.slice(0, 2) === 'on') e[k] = v; else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v); }
   for (const c of kids.flat(3)) { if (c == null || c === false || c === '') continue; e.append(c.nodeType ? c : document.createTextNode(c)); } return e; }
-let S = null, sel = null, bagOpen = false, timer = null, inspect = null, seats = null, diff = 0;
+let S = null, sel = null, bagOpen = false, timer = null, inspect = null, seats = null, diff = 0, mode = 0;
+const NAMES = { warrior: 'Balian', rogue: 'Strider', mage: 'Mithrandir', priest: 'Earane' };
 const store = { get() { try { return JSON.parse(localStorage.getItem(SAVE)); } catch (e) { return null; } }, set(v) { try { v ? localStorage.setItem(SAVE, JSON.stringify(v)) : localStorage.removeItem(SAVE); } catch (e) {} } };
 const humansIdx = () => S.party.map((x, i) => x.ctrl === 'human' ? i : -1).filter(i => i >= 0);
 const leader = () => { const hs = humansIdx(); return S.party[hs[S.leader % hs.length]]; };
@@ -18,33 +19,34 @@ function render() {
   clearTimeout(timer); timer = null;
   const main = $('main'); main.replaceChildren();
   if (!S) { $('hud').replaceChildren(); $('party').replaceChildren(); return renderSetup(main); }
-  const lv = S.party[0].level;
-  $('hud').replaceChildren(h('span', { class: 'stat' }, S.q.title, S.diff ? h('b', { style: 'color:var(--red)' }, '  Veteran') : null), h('span', { class: 'stat' }, 'Act ', h('b', null, String(S.pos < 0 ? 1 : S.map[S.pos].act))), h('span', { class: 'stat' }, 'Level ', h('b', null, String(lv)), lv < 5 ? ` (${S.xp}/${XP_AT[lv]} xp)` : ''), h('span', { class: 'stat' }, 'Gold ', h('b', null, String(S.gold))));
+  const lv = S.party[0].level, where = S.screen === 'town' ? 'In town' : S.screen === 'chapter' ? '' : 'Act ' + (S.pos < 0 ? 1 : S.map[S.pos].act);
+  $('hud').replaceChildren(h('span', { class: 'stat' }, S.q.title, S.diff ? h('b', { style: 'color:var(--red)' }, '  Veteran') : null), h('span', { class: 'stat' }, where), h('span', { class: 'stat' }, 'Level ', h('b', null, String(lv)), lv < maxLevel(S) ? ` (${S.xp}/${xpAt(S, lv)} xp)` : ''), h('span', { class: 'stat' }, 'Gold ', h('b', null, String(S.gold))));
   renderParty();
-  ({ map: renderMap, combat: renderCombat, event: renderEvent, loot: renderLoot, shop: renderShop, rest: renderRest, levelup: renderLevel, end: renderEnd })[S.screen](main);
+  ({ map: renderMap, combat: renderCombat, event: renderEvent, loot: renderLoot, shop: renderShop, rest: renderRest, levelup: renderLevel, end: renderEnd, town: renderTown, chapter: renderChapter })[S.screen](main);
   if (S.screen === 'end') store.set(null); else if (S.screen !== 'combat') store.set(S);
 }
 
 // ---------- setup ----------
 function renderSetup(main) {
-  if (!seats) seats = [{ ctrl: 'human', cls: 'warrior', name: 'Brann' }, { ctrl: 'ai', cls: 'rogue', name: 'Sable' }, { ctrl: 'ai', cls: 'mage', name: 'Ilyra' }, { ctrl: 'ai', cls: 'priest', name: 'Osmund' }];
+  if (!seats) seats = ['warrior', 'rogue', 'mage', 'priest'].map((cls, i) => ({ ctrl: i ? 'ai' : 'human', cls, name: NAMES[cls] }));
   const saved = store.get();
   const rows = seats.map((s, i) => h('div', { class: 'seat' },
     h('select', { onchange: e => { s.ctrl = e.target.value; render(); } }, ['human', 'ai', 'none'].map(v => h('option', { value: v, selected: s.ctrl === v }, { human: 'Human', ai: 'AI ally', none: 'Empty' }[v]))),
     h('input', { type: 'text', value: s.name, maxlength: 14, disabled: s.ctrl === 'none', oninput: e => { s.name = e.target.value; } }),
-    h('select', { disabled: s.ctrl === 'none', onchange: e => { s.cls = e.target.value; render(); } }, Object.keys(CLASSES).map(c => h('option', { value: c, selected: s.cls === c }, CLASSES[c].n)))));
+    h('select', { disabled: s.ctrl === 'none', onchange: e => { if (!s.name.trim() || Object.values(NAMES).includes(s.name.trim())) s.name = NAMES[e.target.value]; s.cls = e.target.value; render(); } }, Object.keys(CLASSES).map(c => h('option', { value: c, selected: s.cls === c }, CLASSES[c].n)))));
   const used = seats.filter(s => s.ctrl !== 'none'), ok = used.some(s => s.ctrl === 'human');
   main.append(h('div', { class: 'card' }, h('h2', null, 'Gather your party'),
     h('p', null, 'A co-op fantasy adventure for one to four heroes. Each run is a freshly generated three-act quest: a villain, a motive, a twist, and a branching road to the lair. Human players share this screen and take turns; AI allies fill the other seats.'),
-    saved && saved.v === 3 ? h('p', null, h('button', { class: 'primary', onclick: () => { S = saved; render(); } }, `Continue: ${saved.q.title}`)) : null,
+    saved && saved.v === 4 ? h('p', null, h('button', { class: 'primary', onclick: () => { S = saved; render(); } }, `Continue: ${saved.camp ? 'campaign, ' : ''}${saved.q.title}`)) : null,
     h('h3', null, 'Seats'), rows,
+    h('p', null, 'Mode: ', h('select', { onchange: e => { mode = +e.target.value; } }, h('option', { value: 0, selected: !mode }, 'Single adventure: three acts, levels 1 to 5, about 40 minutes'), h('option', { value: 1, selected: !!mode }, 'Campaign: a five-chapter saga to level 10, then endless contracts'))),
     h('p', null, 'Difficulty: ', h('select', { onchange: e => { diff = +e.target.value; } }, h('option', { value: 0, selected: !diff }, 'Standard'), h('option', { value: 1, selected: !!diff }, 'Veteran: tougher enemies that focus their attacks, less healing between fights'))),
     h('div', { class: 'grid3' }, [...new Set(used.map(s => s.cls))].map(c => h('div', { class: 'item small' }, h('b', null, CLASSES[c].n), ' ', CLASSES[c].blurb, h('div', { class: 'dim' }, 'At level 3: ', Object.values(CLASSES[c].subs).map(x => x.n).join(' or '), '.')))),
     h('p', { class: 'dim small' }, 'A full party of four with a Priest is the gentlest start. Smaller parties face fewer and weaker enemies; a lone hero gets one second wind per fight.'),
     h('p', null, h('button', { class: 'primary', disabled: !ok, onclick: begin }, 'Begin the adventure'), ok ? '' : ' At least one seat must be human.')));
 }
-function begin() { let p = 0; const list = seats.filter(s => s.ctrl !== 'none').map(s => ({ cls: s.cls, ctrl: s.ctrl, name: (s.name || '').trim() || CLASSES[s.cls].n, player: s.ctrl === 'human' ? 'Player ' + (++p) : '' }));
-  S = newRun((Date.now() ^ (Math.random() * 1e9)) | 0, list, diff); sel = null; render(); }
+function begin() { let p = 0; const list = seats.filter(s => s.ctrl !== 'none').map(s => ({ cls: s.cls, ctrl: s.ctrl, name: (s.name || '').trim() || NAMES[s.cls], player: s.ctrl === 'human' ? 'Player ' + (++p) : '' }));
+  S = (mode ? newCampaign : newRun)((Date.now() ^ (Math.random() * 1e9)) | 0, list, diff); sel = null; render(); }
 
 // ---------- party sidebar and hero sheet ----------
 function renderParty() {
@@ -64,6 +66,7 @@ function sheet(i) {
     h('p', { class: 'small' }, STATS.map(s => `${STAT_NAME[s]} ${u.st[s]}`).join(' · '), ` · ${u.arm} armour · ${u.ward} ward`),
     h('h3', null, 'Gear'), [g.w, g.off, g.a, g.t1, g.t2].filter(Boolean).map(it => h('div', { class: 'small' }, h('b', { class: 'rn' + it.r }, it.n), ': ', itemDesc(it))),
     activeSets(x).map(t => h('div', { class: 'small rn4' }, t)),
+    talentsOf(x).length ? [h('h3', null, 'Talents'), talentsOf(x).map(t => h('div', { class: 'small' }, h('b', null, t[0]), ': ', fxText(t[1]), '.'))] : null,
     free ? h('p', null, h('button', { onclick: () => { x.row = x.row === 'F' ? 'B' : 'F'; sheet(i); render(); } }, `Start fights in the ${x.row === 'F' ? 'back' : 'front'} row instead`)) : null,
     x.ctrl === 'ai' ? h('p', null, h('label', null, h('input', { type: 'checkbox', checked: !!x.manual, onchange: e => { x.manual = e.target.checked; render(); } }), ' Control this ally myself in combat')) : null,
     h('h3', null, `Skills (${x.eq.length}/4 equipped)`), free ? null : h('p', { class: 'small dim' }, 'Skills can be changed between fights.'),
@@ -89,14 +92,15 @@ function terrain(seed) {
   let a = seed | 0; const r = () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, a | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
   const out = [], clear = (x, y, d) => S.map.every(n => (n.px - x) ** 2 + (n.py - y) ** 2 > d * d), soft = { opacity: 0.6, 'stroke-width': 1.3 };
   // a river from the northern edge to the western one, between the first two legs of the road
-  let d = `M${560 + r() * 120},22`, x = 600, y = 22; while (y < 222) { y += 26; x += (r() - 0.5) * 40; d += ` Q${x + 18},${y - 13} ${x},${y}`; } while (x > 30) { x -= 46; y += (r() - 0.45) * 14; d += ` Q${x + 23},${y + (r() - 0.5) * 24} ${x},${y}`; }
+  const two = S.acts === 2, riverY = two ? 322 : 222, mtnY = two ? 630 : 432;
+  let d = `M${560 + r() * 120},22`, x = 600, y = 22; while (y < riverY) { y += 26; x += (r() - 0.5) * 40; d += ` Q${x + 18},${y - 13} ${x},${y}`; } while (x > 30) { x -= 46; y += (r() - 0.45) * 14; d += ` Q${x + 23},${y + (r() - 0.5) * 24} ${x},${y}`; }
   out.push(sv('path', { d, fill: 'none', stroke: '#7fa3b5', 'stroke-width': 7, 'stroke-linecap': 'round', opacity: 0.75 }), sv('path', { d, fill: 'none', stroke: '#e8f0ea', 'stroke-width': 1.2, 'stroke-dasharray': '10 14', opacity: 0.8 }));
   // a mountain range between the second and third legs
-  for (let mx = 270; mx < 890; mx += 30 + r() * 22) { const my = 432 + (r() - 0.5) * 22, sz = 15 + r() * 12; if (!clear(mx, my - sz / 2, 38)) continue;
+  for (let mx = two ? 60 : 270; mx < (two ? 830 : 890); mx += 30 + r() * 22) { const my = mtnY + (r() - 0.5) * (two ? 10 : 22), sz = 15 + r() * 12; if (!clear(mx, my - sz / 2, 38)) continue;
     out.push(ink(`M${mx - sz},${my} L${mx},${my - sz * 1.25} L${mx + sz},${my}`, { fill: '#d3c096', opacity: 0.9, 'stroke-width': 1.5 }), ink(`M${mx},${my - sz * 1.25} L${mx + sz * 0.2},${my - sz * 0.5} L${mx - sz * 0.15},${my - sz * 0.25}`, soft)); }
   // woods in clumps, thinning toward the lair; then hills and grass
   for (let c = 0; c < 20; c++) { const cx = 50 + r() * 860, cy = 60 + r() * 560, dead = cy > 470 && r() < 0.6;
-    for (let k = 0; k < 5 + r() * 5; k++) { const tx = cx + (r() - 0.5) * 80, ty = cy + (r() - 0.5) * 46; if (!clear(tx, ty, 30) || (ty > 400 && ty < 445 && tx > 230)) continue;
+    for (let k = 0; k < 5 + r() * 5; k++) { const tx = cx + (r() - 0.5) * 80, ty = cy + (r() - 0.5) * 46; if (!clear(tx, ty, 30) || (!two && ty > 400 && ty < 445 && tx > 230) || (two && ty > 590)) continue;
       out.push(dead ? ink(`M${tx},${ty} v-11 M${tx},${ty - 6} l-4,-5 M${tx},${ty - 8} l4,-4`, soft) : ink(`M${tx},${ty} v-4 M${tx - 5},${ty - 4} q5,-14 10,0 z`, { fill: '#a9b683', opacity: 0.75, 'stroke-width': 1.2 })); } }
   for (let k = 0; k < 16; k++) { const hx = 40 + r() * 880, hy = 50 + r() * 580; if (clear(hx, hy, 34)) out.push(ink(`M${hx - 12},${hy} q12,-13 24,0`, soft)); }
   for (let k = 0; k < 40; k++) { const gx = 30 + r() * 900, gy = 40 + r() * 600; if (clear(gx, gy, 26)) out.push(ink(`M${gx - 3},${gy} l1,-4 M${gx},${gy} v-5 M${gx + 3},${gy} l-1,-4`, { opacity: 0.4, 'stroke-width': 1 })); }
@@ -111,7 +115,7 @@ function renderMap(main) {
   svg.append(...terrain(S.seed0));
   const lab = (x, y, t, size, extra) => sv('text', { x, y, fill: INK, 'font-family': 'Georgia, serif', 'font-size': size, 'text-anchor': 'middle', ...extra }, t);
   svg.append(lab(480, 46, q.region.replace(/^the /, 'The ').toUpperCase(), 22, { 'letter-spacing': 6, 'font-weight': 'bold', opacity: 0.85 }));
-  ['I', 'II', 'III'].forEach((t, k) => svg.append(lab(k === 1 ? 915 : 45, 70 + k * 200, 'Act ' + t, 13, { 'font-style': 'italic', opacity: 0.7 })));
+  ['I', 'II', 'III'].slice(0, S.acts || 3).forEach((t, k) => svg.append(lab(k === 1 ? 915 : 45, S.acts === 2 ? 85 + k * 280 : 70 + k * 200, 'Act ' + t, 13, { 'font-style': 'italic', opacity: 0.7 })));
   // compass
   svg.append(sv('g', { transform: 'translate(908,606) scale(0.8)', opacity: 0.8 }, sv('circle', { r: 24, fill: 'none', stroke: INK, 'stroke-width': 1 }), ink('M0,-30 L5,0 L0,30 L-5,0 Z', { fill: '#cdb788' }), ink('M-30,0 L0,-5 L30,0 L0,5 Z', { fill: '#e9dab4', 'stroke-width': 1 }), lab(0, -34, 'N', 13, { 'font-weight': 'bold' })));
   // roads
@@ -131,7 +135,7 @@ function renderMap(main) {
   const box = h('div', { class: 'mapbox' }); box.append(svg);
   const legend = Object.keys(NODE).map(t => { const s = sv('svg', { viewBox: '-20 -20 40 40', width: 26, height: 26, style: 'vertical-align:middle' }, sv('circle', { r: 17, fill: '#f3e6c4', stroke: NODE[t][0], 'stroke-width': 3.2 }), nodeIcon(t)); const sp = h('span', null); sp.append(s, ' ' + NODE[t][1]); return sp; });
   main.append(h('div', { class: 'card' }, h('h2', null, q.title),
-    h('p', null, `${q.name}, ${VILLAINS[q.vi].title}, ${q.motive}. Your road runs from ${q.town} through ${q.region} to ${q.lair}.`),
+    h('p', null, `${q.name}, ${q.vtitle}, ${q.motive}. Your road runs from ${q.town} through ${q.region} to ${q.lair}.`),
     box, h('p', { class: 'row small' }, legend),
     h('p', null, humansIdx().length > 1 ? h('b', null, `${leader().player} (${leader().name}) chooses the road. `) : '', 'Pick one of the ringed stops. The red flag marks where you are.', S.nextMod ? h('span', { class: 'dim' }, ' ' + { ambush: 'You will have the jump on the next enemy.', surprised: 'The next enemy will have the jump on you.', exposed: 'The next enemy starts Exposed.' }[S.nextMod]) : '')));
 }
@@ -156,7 +160,7 @@ function renderCombat(main) {
   const fire = t => { const a = sel.k === 'revive' ? { k: 'revive', t } : { k: sel.k, id: sel.id, t }; sel = null; bagOpen = false; if (act(S, C, a)) render(); else render(); };
   const line = (side, r) => { const us = C.units.filter(u => u.side === side && u.row === r && (side === 'H' || up(u))), rowT = targets && side === 'E' && targets.includes(r);
     return h('div', { class: 'rowline' }, h('div', { class: 'rowlab' + (rowT ? ' tgt' : ''), onclick: rowT ? () => fire(r) : null }, rowT ? 'Hit this row' : (r === 'F' ? 'Front' : 'Back')), us.map(u => unitCard(C, u, targets, fire))); };
-  const card = h('div', { class: 'card' }, h('h2', null, C.boss ? `${S.q.name}, ${VILLAINS[S.q.vi].title}` : C.elite ? 'A dangerous foe' : 'Battle', h('span', { class: 'dim small' }, `  round ${C.round}`)),
+  const card = h('div', { class: 'card' }, h('h2', null, C.boss ? `${S.q.name}, ${S.q.vtitle}` : C.elite ? 'A dangerous foe' : 'Battle', h('span', { class: 'dim small' }, `  round ${C.round}`)),
     h('div', { class: 'side' }, line('E', 'B'), line('E', 'F')), h('div', { class: 'log', id: 'log' }, C.log.slice(-40).map(t => h('div', null, t))), h('div', { class: 'side' }, line('H', 'F'), line('H', 'B')));
   const bar = h('div', { class: 'acts' });
   if (C.over) bar.append(h('p', null, h('b', null, C.over === 'win' ? 'Victory. ' : 'The party has fallen. '), h('button', { class: 'primary', onclick: () => { endCombat(S); sel = null; render(); } }, 'Continue')));
@@ -194,19 +198,19 @@ const itemCard = (it, foot) => h('div', { class: `item r${it.r || 0}` + (it.sold
 // the shared pack: what everyone wears, and everything spare, grouped by kind
 function openPack() {
   const free = packable(S), again = () => { openPack(); render(); }, groups = [['weapon', 'Weapons'], ['shield', 'Off-hand'], ['armor', 'Armour'], ['trinket', 'Trinkets']];
-  const out = [h('h2', null, 'Gear and pack'), h('p', { class: 'small dim' }, free ? 'Nothing is lost when gear is swapped: it comes back here, ready for someone else.' + (S.screen === 'shop' ? ' The merchant buys spare gear at half its value.' : ' Spare gear can be sold at a merchant.') : 'Gear cannot be changed during a fight.')];
+  const out = [h('h2', null, 'Gear and pack'), h('p', { class: 'small dim' }, free ? 'Nothing is lost when gear is swapped: it comes back here, ready for someone else.' + (S.screen === 'shop' || S.screen === 'town' ? ' The merchant buys spare gear at half its value.' : ' Spare gear can be sold at a merchant.') : 'Gear cannot be changed during a fight.')];
   S.party.forEach((x, i) => out.push(h('h3', null, `${x.name}, ${subName(x)}`), ['w', 'off', 'a', 't1', 't2'].map(sl => { const it = x.gear[sl]; return it ? h('div', { class: `item r${it.r}`, style: 'margin:3px 0;padding:4px 8px' }, h('b', { class: 'rn' + it.r }, it.n), h('span', { class: 'small' }, ' ' + itemDesc(it) + ' '), free && sl !== 'w' ? h('button', { class: 'small', onclick: () => { unequip(S, i, sl); again(); } }, 'Take off') : null) : null; }), activeSets(x).map(t => h('div', { class: 'small rn4' }, t))));
   out.push(h('h2', { style: 'margin-top:14px' }, `In the pack (${S.stash.length})`));
   if (!S.stash.length) out.push(h('p', { class: 'dim' }, 'Empty.'));
   for (const [k, title] of groups) { const list = S.stash.map((it, si) => [it, si]).filter(e => e[0].k === k).sort((a, b) => b[0].r - a[0].r || b[0].tier - a[0].tier); if (!list.length) continue;
-    out.push(h('h3', null, title), list.map(([it, si]) => itemCard(it, free ? h('div', { class: 'row' }, S.party.map((x, i) => canUse(x, it) ? h('button', { onclick: () => { fromStash(S, si, i); again(); } }, x.name, h('span', { class: 'dim small' }, x.gear[slotOf(x, it)] ? ` (swaps out ${x.gear[slotOf(x, it)].n})` : ' (empty slot)')) : null), S.screen === 'shop' ? h('button', { onclick: () => { sellStash(S, si); again(); } }, `Sell (${it.price >> 1} gold)`) : null) : null))); }
+    out.push(h('h3', null, title), list.map(([it, si]) => itemCard(it, free ? h('div', { class: 'row' }, S.party.map((x, i) => canUse(x, it) ? h('button', { onclick: () => { fromStash(S, si, i); again(); } }, x.name, h('span', { class: 'dim small' }, x.gear[slotOf(x, it)] ? ` (swaps out ${x.gear[slotOf(x, it)].n})` : ' (empty slot)')) : null), S.screen === 'shop' || S.screen === 'town' ? h('button', { onclick: () => { sellStash(S, si); again(); } }, `Sell (${it.price >> 1} gold)`) : null) : null))); }
   out.push(h('p', null, h('button', { class: 'primary', onclick: closeModal }, 'Close')));
   modal(out);
 }
 function renderEvent(main) {
   const e = EV[S.ev.id], r = S.ev.result, card = h('div', { class: 'card' }, h('h2', null, fill(S, e.t)), h('p', null, eventText(S, e)));
   if (!r) { if (humansIdx().length > 1) card.append(h('p', { class: 'dim' }, `${leader().player} (${leader().name}) decides.`));
-    e.c.forEach((c, i) => { const cost = c.cost ? Math.round(c.cost * (0.7 + 0.3 * S.map[S.pos].act)) : 0; let sub = '';
+    e.c.forEach((c, i) => { const cost = c.cost ? Math.round(c.cost * (0.7 + 0.3 * pw(S))) : 0; let sub = '';
       if (c.s) { const info = checkInfo(S, c); sub = `${STAT_NAME[c.s]} check: ${S.party[info.hi].name} rolls d20 + ${info.stat} and needs ${info.need}+ on the die (${Math.round(info.odds * 100)}%)`; }
       else if (cost) sub = `Costs ${cost} gold` + (S.gold < cost ? ' (you cannot afford it)' : ''); else if (c.random) sub = 'Anything could happen';
       card.append(h('button', { class: 'choice', disabled: cost > S.gold, onclick: () => { chooseEvent(S, i); render(); } }, fill(S, c.l), sub ? h('small', null, sub) : null)); });
@@ -225,14 +229,35 @@ function renderLoot(main) {
     h('div', { class: 'grid3' }, S.loot.items.map((it, k) => itemCard(it, giveButtons(it, i => { takeLoot(S, k, i); render(); })))),
     h('p', null, h('button', { onclick: () => { takeLoot(S, -1); render(); } }, 'Leave them and take 10 gold instead'))));
 }
+function shopGrid() { return h('div', { class: 'grid3' }, S.shop.items.map((it, k) => itemCard(it, it.sold ? h('div', { class: 'small dim' }, 'Sold') : h('div', null, h('div', { class: 'small' }, `${it.price} gold`), S.gold >= it.price ? giveButtons(it, i => { buy(S, k, i); render(); }) : h('div', { class: 'small dim' }, 'Too expensive'))))); }
+function smithPanel() { const top = S.camp ? ['plain', 'Fine', 'Masterwork', 'Runed', 'Legendary'][maxTier(S) - 1] : 'Masterwork';
+  return [h('p', { class: 'small dim' }, `Works on gear a hero is wearing. Improve raises quality a step (up to ${top}${S.camp && maxTier(S) < 5 ? ' for now; the smith learns more each chapter' : ''}). Enchant adds a magical property, up to three, and raises rarity. Reforge rerolls the properties an item has. Set pieces can only be improved.`),
+    S.party.map((x, i) => h('div', { class: 'item', style: 'padding:6px 10px' }, h('b', null, x.name), ['w', 'off', 'a'].map(sl => { const it = x.gear[sl]; if (!it) return null; const ops = Object.keys(SMITH).map(op => [op, smithCost(it, op, S)]).filter(o => o[1]);
+      return h('div', { class: 'row small', style: 'margin-top:4px' }, h('span', { class: 'rn' + it.r, title: itemDesc(it), style: 'min-width:190px' }, it.n), ops.length ? ops.map(([op, c]) => h('button', { class: 'small', disabled: S.gold < c, onclick: () => { smith(S, i, sl, op); render(); } }, `${SMITH[op]} (${c})`)) : h('span', { class: 'dim' }, 'nothing more to do')); })))]; }
+const healButton = () => h('button', { disabled: !S.party.some(x => x.wounds || x.hp < maxHp(x)) || S.gold < S.shop.healCost, onclick: () => { buyHeal(S); render(); } }, `Healer: full health and one wound each (${S.shop.healCost} gold)`);
 function renderShop(main) {
-  const hurt = S.party.some(x => x.wounds || x.hp < maxHp(x));
   main.append(h('div', { class: 'card' }, h('h2', null, 'A travelling merchant'), h('p', null, S.q.flags.helped ? 'Word of your good deeds has reached her: prices are a fifth lower.' : '"Coin first, then questions."', ` You have ${S.gold} gold. `, h('button', { onclick: openPack }, `Sell spare gear from the pack (${S.stash.length})`)),
-    h('div', { class: 'grid3' }, S.shop.items.map((it, k) => itemCard(it, it.sold ? h('div', { class: 'small dim' }, 'Sold') : h('div', null, h('div', { class: 'small' }, `${it.price} gold`), S.gold >= it.price ? giveButtons(it, i => { buy(S, k, i); render(); }) : h('div', { class: 'small dim' }, 'Too expensive'))))),
-    h('h3', null, 'The smith'), h('p', { class: 'small dim' }, 'Works on gear a hero is wearing. Improve raises quality a step (plain, Fine, Masterwork). Enchant adds a magical property, up to three, and raises rarity. Reforge rerolls the properties an item has. Set pieces can only be improved.'),
-    S.party.map((x, i) => h('div', { class: 'item', style: 'padding:6px 10px' }, h('b', null, x.name), ['w', 'off', 'a'].map(sl => { const it = x.gear[sl]; if (!it) return null; const ops = Object.keys(SMITH).map(op => [op, smithCost(it, op)]).filter(o => o[1]);
-      return h('div', { class: 'row small', style: 'margin-top:4px' }, h('span', { class: 'rn' + it.r, title: itemDesc(it), style: 'min-width:190px' }, it.n), ops.length ? ops.map(([op, c]) => h('button', { class: 'small', disabled: S.gold < c, onclick: () => { smith(S, i, sl, op); render(); } }, `${SMITH[op]} (${c})`)) : h('span', { class: 'dim' }, 'nothing more to do')); }))),
-    h('p', { class: 'row' }, h('button', { disabled: !hurt || S.gold < S.shop.healCost, onclick: () => { buyHeal(S); render(); } }, `Healer: full health and one wound each (${S.shop.healCost} gold)`), h('button', { class: 'primary', onclick: () => { finishNode(S); render(); } }, 'Leave'))));
+    shopGrid(), h('h3', null, 'The smith'), smithPanel(),
+    h('p', { class: 'row' }, healButton(), h('button', { class: 'primary', onclick: () => { finishNode(S); render(); } }, 'Leave'))));
+}
+// ---------- campaign: town and chapter summary ----------
+function renderTown(main) {
+  const c = S.camp, q = S.q, sec = (title, open, ...kids) => { const d = h('details', { open, style: 'margin:10px 0;border-top:1px solid var(--line);padding-top:8px' }, h('summary', { style: 'cursor:pointer;color:var(--gold);font-size:17px' }, title)); d.append(...kids.flat(3).filter(k => k != null && k !== false)); return d; };
+  main.append(h('div', { class: 'card' }, h('h2', null, 'Lastlight'), h('p', null, 'Home, such as it is: an inn, a forge, a healer, and a notice board. Everyone is rested and at full health.', ` You have ${S.gold} gold.`),
+    h('div', { class: 'item r' + (c.ch === 5 ? 3 : c.ch > 5 ? 1 : 2) }, h('b', null, q.title), h('div', null, `${q.name}, ${q.vtitle}, ${q.motive}. The road runs through ${q.region} to ${q.lair}.`), h('div', { class: 'small dim' }, `Two acts. Enemies: ${FAM[q.fam].n}. ${FAM[q.fam].weak}`),
+      h('p', null, h('button', { class: 'primary', onclick: () => { startChapter(S); render(); } }, c.ch > 5 ? 'Take the contract' : 'Set out'))),
+    sec('Chronicle', c.done.length < 1, c.lore.map(t => h('p', null, t)), c.done.length ? h('p', { class: 'dim small' }, 'Defeated: ', c.done.map(d => `${d.name} (${d.title}), at level ${d.level}`).join('; '), '.') : null, h('p', { class: 'dim small' }, `Times driven back: ${c.wipes}.`, c.saga ? ' The saga is complete; contracts grow harder without end.' : c.ch >= 4 ? ` The enemy is known: ${ARCH[c.arch].name}, ${ARCH[c.arch].title}.` : ' Someone is behind all this. You do not yet know who.')),
+    sec('Merchant', true, shopGrid(), h('p', { class: 'row' }, healButton(), h('button', { onclick: openPack }, `Vault and pack (${S.stash.length}): sort, hand out and sell gear`))),
+    sec('Smith', false, smithPanel()),
+    sec('Training hall', false, h('p', { class: 'small dim' }, `Swap a talent for ${TRAIN.talent} gold, or retrain a hero into their class's other path for ${TRAIN.sub} gold (talents carry across by position).`),
+      S.party.map((x, i) => h('div', { class: 'item', style: 'padding:6px 10px' }, h('b', null, `${x.name}, ${subName(x)}`), x.sub ? h('button', { class: 'small', style: 'margin-left:8px', disabled: S.gold < TRAIN.sub, onclick: () => { changeSub(S, i); render(); } }, `Retrain as ${Object.values(CLASSES[x.cls].subs).find(v => v.n !== subName(x)).n} (${TRAIN.sub})`) : h('span', { class: 'small dim' }, ' chooses a path at level 3'),
+        x.sub ? (x.tal || []).map((ch, k) => ch === undefined || ch === null ? null : h('div', { class: 'row small', style: 'margin-top:4px' }, h('span', { class: 'dim', style: 'min-width:60px' }, `Level ${k + 6}`), TALENTS[x.sub][k].map((t, o) => h('button', { class: 'small' + (ch === o ? ' on' : ''), disabled: ch === o || S.gold < TRAIN.talent, title: fxText(t[1]), onclick: () => { retrain(S, i, k, o); render(); } }, `${t[0]}: ${fxText(t[1])}`)))) : null,
+        x.sub && !(x.tal || []).length ? h('div', { class: 'small dim' }, 'Talents begin at level 6.') : null)))));
+}
+function renderChapter(main) {
+  const L = S.camp.last;
+  main.append(h('div', { class: 'card' }, h('h2', null, L.win ? (L.ch === 5 ? 'The saga is won' : L.ch > 5 ? 'Contract fulfilled' : `Chapter ${L.ch} complete`) : 'Driven back'), h('p', { class: 'dim' }, L.title), L.lines.map(t => h('p', null, t)),
+    h('p', null, h('button', { class: 'primary', onclick: () => { closeChapter(S); render(); } }, 'Return to Lastlight'))));
 }
 function renderRest(main) {
   const opt = (k, t, d) => h('button', { class: 'choice', onclick: () => { doRest(S, k); render(); } }, t, h('small', null, d));
@@ -242,12 +267,13 @@ function renderRest(main) {
 
 // ---------- level up, end ----------
 function renderLevel(main) {
-  const L = S.lvl; L.need.forEach((n, i) => { if (n && S.party[i].ctrl === 'ai') pickSub(S, i, aiSub(S, i)); });
+  const L = S.lvl; L.need.forEach((n, i) => { if (n && S.party[i].ctrl === 'ai') pickSub(S, i, aiSub(S, i)); }); L.needT.forEach((n, i) => { if (n && S.party[i].ctrl === 'ai') pickTalent(S, i, Math.random() < 0.5 ? 0 : 1); });
   const card = h('div', { class: 'card' }, h('h2', null, `Level ${L.level}`), h('p', null, 'The whole party grows stronger: more health, higher stats, and new skills.'));
   S.party.forEach((x, i) => { const c = CLASSES[x.cls];
     if (L.need[i]) card.append(h('h3', null, `${x.name} (${x.player}): choose a path`), h('div', { class: 'grid3' }, Object.entries(c.subs).map(([k, sub]) => h('div', { class: 'item' }, h('b', null, sub.n), h('div', { class: 'small' }, sub.blurb), sub.sk.map((id, n) => h('div', { class: 'small dim' }, `Level ${n + 3}: ${SK[id].n}. ${skillDesc(SK[id])}`)), h('p', null, h('button', { class: 'primary', onclick: () => { pickSub(S, i, k); render(); } }, `Become a ${sub.n}`))))));
-    else card.append(h('div', { class: 'item small' }, h('b', null, x.name), L.level === 3 ? ` is now a ${subName(x)}. ` : ' ', L.gained[i].length ? L.gained[i].map(id => h('div', null, 'New skill: ', h('b', null, SK[id].n), '. ', skillDesc(SK[id]), x.eq.includes(id) ? '' : ' (Not equipped: open the hero sheet to swap it in.)')) : 'Stronger, but no new skill this level.')); });
-  card.append(h('p', null, h('button', { class: 'primary', disabled: L.need.some(Boolean), onclick: () => { closeLevel(S); render(); } }, 'Continue')));
+    else if (L.needT[i]) card.append(h('h3', null, `${x.name} (${x.player}): choose a talent`), h('div', { class: 'grid3' }, TALENTS[x.sub][L.level - 6].map((t, o) => h('div', { class: 'item' }, h('b', null, t[0]), h('div', { class: 'small' }, fxText(t[1]) + '.'), h('p', null, h('button', { class: 'primary', onclick: () => { pickTalent(S, i, o); render(); } }, 'Take ' + t[0]))))));
+    else card.append(h('div', { class: 'item small' }, h('b', null, x.name), L.level >= 6 && x.sub && x.tal[L.level - 6] !== undefined ? ` takes ${TALENTS[x.sub][L.level - 6][x.tal[L.level - 6]][0]}. ` : '', L.level === 3 ? ` is now a ${subName(x)}. ` : ' ', L.gained[i].length ? L.gained[i].map(id => h('div', null, 'New skill: ', h('b', null, SK[id].n), '. ', skillDesc(SK[id]), x.eq.includes(id) ? '' : ' (Not equipped: open the hero sheet to swap it in.)')) : L.level >= 6 ? '' : 'Stronger, but no new skill this level.')); });
+  card.append(h('p', null, h('button', { class: 'primary', disabled: L.need.some(Boolean) || L.needT.some(Boolean), onclick: () => { closeLevel(S); render(); } }, 'Continue')));
   main.append(card);
 }
 function renderEnd(main) {
@@ -265,6 +291,7 @@ function rules() {
     DEBUFFS.concat(['Guard', 'Taunt', 'Blessed', 'Hidden']).map(s => h('div', { class: 'small' }, h('span', { class: 'chip ' + s + (DEBUFFS.includes(s) ? '' : ' good') }, s), ' ', STATE_INFO[s])),
     h('p', null, h('b', null, 'Going down. '), 'A hero at zero health is down and takes a wound (12% less maximum health) until healed at a camp or merchant. Allies can help them up mid-fight. If everyone is down, the adventure ends.'),
     h('p', null, h('b', null, 'Gear. '), 'A border colour shows rarity: ', RAR.map((n, k) => h('b', { class: 'rn' + k }, n + ' ')), '. Weapons, armour and off-hand items gain a step for each magical property. Set pieces grant bonuses when one hero wears two or three from the same set. Swapped-out gear goes to the shared pack, where any hero who can use it may take it. Merchants also keep a smith who can improve, enchant and reforge what you wear.'),
+    h('p', null, h('b', null, 'Campaign. '), 'Five two-act chapters lead to a hidden enemy, with a town between them for trade, smithing, training and the chronicle. Heroes reach level 10, choosing one of two talents at each level from 6. Being wiped out costs half your gold and a wound each, and the chapter can be tried again. After the saga, contracts continue for as long as you can survive them.'),
     h('p', null, h('b', null, 'Checks. '), 'Outside combat the best-suited hero rolls a d20 plus the named stat. The odds are shown before you choose.'),
     h('p', null, h('button', { class: 'primary', onclick: closeModal }, 'Close')));
 }

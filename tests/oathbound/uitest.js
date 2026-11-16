@@ -14,11 +14,12 @@ global.setTimeout=(f)=>{timers.push(f);return timers.length};global.clearTimeout
 const walk=(e,out)=>{if(!e||typeof e==='string')return out;if((e.tag==='button'||e.tag==='g'||e.tag==='div')&&e.onclick&&!('disabled' in e.attrs))out.push(e);if(e.tag==='input'&&e.attrs.type==='checkbox'&&e.onchange&&!('disabled' in e.attrs))out.push(e);for(const k of e.kids)walk(k,out);return out};
 const text=e=>typeof e==='string'?e:(e.kids||[]).map(text).join(' ');
 eval(js+`
-let done=0,wins=0,clicks=0,screens={},sheets=0;
+let done=0,wins=0,clicks=0,screens={},sheets=0,camps=0;
 for(let run=0;run<RUNS;run++){S=null;seats=null;render();
  diff=run%2;const cls=Object.keys(CLASSES);seats=[0,1,2,3].map(i=>({ctrl:i<HUM?'human':(i<2+run%3?'ai':'none'),cls:cls[(i+run)%4],name:'H'+i}));render();
- const b=walk(ids.main,[]).find(e=>text(e).startsWith('Begin'));b.onclick();
+ mode=run%3===2?1:0;const b=walk(ids.main,[]).find(e=>text(e).startsWith('Begin'));b.onclick();
  for(let n=0;n<60000&&S&&S.screen!=='end';n++){
+  if(S.camp&&(S.camp.ch>2||S.camp.wipes>3)){camps++;break}
   screens[S.screen]=(screens[S.screen]||0)+1;
   if(timers.length){const f=timers.pop();timers.length=0;f();continue}
   if(ids.modal.className==='show'){const mb=walk(ids.mbody,[]);const e=mb[Math.floor(R()*mb.length)];clicks++;if(e.tag==='input'){e.checked=!e.checked;e.onchange({target:e})}else e.onclick();if(R()<0.5)closeModal();continue}
@@ -27,10 +28,11 @@ for(let run=0;run<RUNS;run++){S=null;seats=null;render();
   if(R()<0.03){openPack();continue}
   let bs=walk(ids.main,[]);if(!bs.length)throw new Error('no buttons on '+S.screen);
   if(S.screen==='combat'){const t=bs.filter(e=>/tgt/.test(e.className));if(t.length&&R()<0.9)bs=t;else{const sk=bs.filter(e=>e.tag==='button'&&!/Defend|Move to|Supplies/.test(text(e)));if(sk.length&&R()<0.85)bs=sk}}
-  if(S.screen==='shop'&&R()<0.3)bs=bs.filter(e=>text(e)==='Leave');
+  if(S.screen==='shop'&&R()<0.3)bs=bs.filter(e=>text(e)==='Leave');if(S.screen==='town'&&R()<0.25)bs=bs.filter(e=>/^(Set out|Take the contract)/.test(text(e)));
   const e=bs[Math.floor(R()*bs.length)];clicks++;e.onclick({target:e});
-  if(n===59999)throw new Error('run did not finish, screen '+S.screen)}
+  if(n===59999&&!S.camp)throw new Error('run did not finish, screen '+S.screen)}
+ if(S&&S.camp){S=null;localStorage.removeItem('oathbound-v1');render();continue}
  if(S){done++;if(S.result==='victory')wins++;const nb=walk(ids.main,[]).find(e=>text(e)==='New adventure');if(!text(ids.main).includes('oath'))throw new Error('no ending');nb.onclick()}}
 if(mem['oathbound-v1'])throw new Error('save not cleared');
-console.log('humans',HUM,'| runs finished',done,'of',RUNS,'| wins',wins,'| clicks',clicks,'| hero sheets opened',sheets,'| screens seen',Object.keys(screens).join(','));
+console.log('humans',HUM,'| single runs finished',done,'| campaigns exercised',camps,'| wins',wins,'| clicks',clicks,'| hero sheets opened',sheets,'| screens seen',Object.keys(screens).join(','));
 `);

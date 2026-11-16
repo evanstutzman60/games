@@ -36,3 +36,4 @@ Needs Node 18 or newer. From the repository root:
 Co-op RPG, 1 to 4 heroes (human or AI), one generated three-act adventure per run. Play: `oathbound/`.
 The game file is assembled from `oathbound/src/` with `sh oathbound/src/build.sh`.
 Tests: `node tests/oathbound/sim.js oathbound/index.html 300 warrior,rogue,mage,priest` (full AI runs) and `node tests/oathbound/uitest.js oathbound/index.html 10 1` (random clicks through the UI).
+Campaign mode: `node tests/oathbound/simc.js oathbound/index.html 60 warrior,rogue,mage,priest` plays whole five-chapter campaigns with an AI party and reports per-chapter win rates.
