@@ -104,7 +104,7 @@
   <span id="setup">
     <label><input type="checkbox" id="fast"> Fast AI</label>
     <label title="When an army leaves a town that is in unrest, about a quarter stays behind to hold it"><input type="checkbox" id="autog" checked> Auto-garrison</label>
-    <label>AI <select id="level"><option value="2">Veteran</option><option value="1">Standard</option></select></label>
+    <label>AI <select id="level"><option value="2">Standard</option><option value="3">Veteran</option><option value="1">Novice</option></select></label>
     <span id="players" title="Set each nation to a human player or the AI. Changing this starts a new map."></span>
     <button id="new">New map</button>
   </span>
@@ -597,8 +597,16 @@ function aiPick(S, n) {
 }
 // Veteran AI: expected-value attacks, one war aim at a time, real threat checks on the capital
 const AI_P = { cap: 0.6, capMin: 12, mergeK: 0, danger: 15, gain: 0.9, town: 30, appr: 0.67, lose: 0.8, garr: 15 };
+// Veteran switches. Standard runs the same picker with all of them off.
+const VET = { threat: true, assault: true, split: true, eco: true }, NOVET = { threat: false, assault: false, split: false, eco: false };
+const vetOf = (S, n) => S.ai[n] === 3 ? (S.vet && S.vet[n]) || VET : NOVET;
+// the strongest blow each hex could take on the enemies' next turns: every hostile army's real reach, not just distance
+function strikeMap(S, n) { const out = new Map();
+  S.cells.forEach((c, j) => { if (!mobileFoe(S, n, c)) return; const p = atk(S, c.army);
+    for (const k of reachable(S, j, c.army.count).res.keys()) if ((out.get(k) || 0) < p) out.set(k, p); });
+  return out; }
 function aiPick2(S, n) {
-  const P = (S.params && S.params[n]) || AI_P;
+  const P = (S.params && S.params[n]) || AI_P, V = vetOf(S, n);
   const dist = objectiveDist(S, n), capI = S.nations[n].cap, sh = strengths(S), bold = sh[n] > 0.5, cells = S.cells;
   let target = -1, tv = -1, capDist = null;
   for (let m = 0; m < 4; m++) { if (!S.nations[m].alive || !hostile(S, n, m)) continue; const f = objectiveDist(S, n, m); if (f[capI] >= 999) continue;
@@ -609,11 +617,22 @@ function aiPick2(S, n) {
     if (hexDist(capI, j) <= 4 && reachable(S, j).res.has(capI)) { threats.add(j); threatSum += power(c.army); } });
   const g = cells[capI].army, capWeak = threats.size > 0 && (g ? power(g) : 0) + defBonus(S, capI) < threatSum * 0.9;
   let need = 0; cells.forEach((c, j) => { if (c.army && c.army.owner !== n && hostile(S, n, c.army.owner) && c.land && isTown(c)) need = Math.max(need, power(c.army) + defBonus(S, j, n)); });
+  const strike = V.threat ? strikeMap(S, n) : null;
+  const mine = []; cells.forEach((cell, i) => { const full = cell.army; if (!full || full.owner !== n || full.moved) return; const mv = movers(S, i); if (mv < 1) return;
+    const a = mv === full.count ? full : { ...full, count: mv }; mine.push({ i, cell, full, mv, a, res: reachable(S, i, S.ai[n] === 3 ? mv : undefined).res, myP: power(a) }); });
+  // combined assaults: weaker armies soften a target that no single army can take, so the strongest can finish it this turn
+  const plans = new Map();
+  if (V.assault && S.movesLeft >= 2) { const byT = new Map(); for (const u of mine) for (const [t, type] of u.res) if (type === 'attack') { if (!byT.has(t)) byT.set(t, []); byT.get(t).push(u); }
+    for (const [t, us] of byT) { if (us.length < 2) continue; const d = defender(S, t); if (d.militia) continue; const tc = cells[t], mult = 0.7 + 0.1 * d.morale, bonus = u => defBonus(S, t, n) + amphib(S, u.i, t, n);
+      us.sort((x, y) => x.myP - y.myP); const strong = us[us.length - 1], soft = []; let cnt = d.count, ok = false, solo = false;
+      for (let k = 0; k < us.length - 1 && soft.length < S.movesLeft - 1; k++) { if (atk(S, strong.a) >= (cnt * mult + bonus(strong)) * 1.2) { ok = true; break; }
+        const u = us[k], dPu = cnt * mult + bonus(u), aP = atk(S, u.a); if (aP >= dPu * 1.2) { solo = true; break; } cnt = Math.max(1, Math.round(cnt * (1 - 0.7 * Math.min(1, aP / dPu)))); soft.push(u); }
+      if (!ok && !solo) ok = atk(S, strong.a) >= (cnt * mult + bonus(strong)) * 1.2;
+      if (!ok || !soft.length) continue;
+      const win = 6 + d.count * 0.8 + (tc.land && isTown(tc) ? 25 : 0) + (tc.land && ownCapital(S, tc) ? 400 : 0) + (threats.has(t) ? 30 : 0);
+      const value = win - soft.reduce((q, u) => q + u.a.count * 0.8, 0) - strong.a.count * 0.3; if (value > 4) plans.set(t, { first: soft[0].i, value }); } }
   let best = null, bs = 0.5;
-  cells.forEach((cell, i) => {
-    const full = cell.army; if (!full || full.owner !== n || full.moved) return; const mv = movers(S, i); if (mv < 1) return;
-    const a = mv === full.count ? full : { ...full, count: mv };
-    const { res } = reachable(S, i), myP = power(a);
+  for (const { i, cell, full, mv, a, res, myP } of mine) {
     for (const [t, type] of res) {
       const tc = cells[t]; let s = 0, after = myP, sortie = false, big = false;
       if (type === 'attack') {
@@ -622,7 +641,8 @@ function aiPick2(S, n) {
         const win = 6 + d.count * 0.8 + (tc.land && isTown(tc) ? 25 : 0) + (isCap ? 400 : 0) + (threats.has(t) ? 30 : besiegers.includes(t) ? 12 : 0) + (d.owner === target ? 4 : 0);
         const lose = -a.count * P.lose + (d.militia ? 0 : Math.min(d.count, 0.7 * r * d.count) * 0.4);
         s = p * (win - a.count * 0.35 / Math.max(r, 1)) + (1 - p) * lose;
-        if (p < 0.6 && win >= 25 && S.movesLeft >= 2 && !d.militia) {     // siege: soften now if a second army can finish
+        if (V.assault) { const pl = plans.get(t); if (pl && pl.first === i) s = Math.max(s, pl.value * 0.8); }
+        else if (p < 0.6 && win >= 25 && S.movesLeft >= 2 && !d.militia) {     // siege: soften now if a second army can finish
           const left = (dP - power(d)) + power(d) * (1 - 0.7 * Math.min(1, r)); let fin = 0;
           cells.forEach((c, j) => { if (j !== i && c.army && c.army.owner === n && !c.army.moved && hexDist(j, t) <= RANGE) fin = Math.max(fin, power(c.army)); });
           if (r >= 0.4 && fin >= left * 1.25) s = Math.max(s, win * 0.6 - a.count * 0.5);
@@ -631,28 +651,34 @@ function aiPick2(S, n) {
         sortie = p >= 0.8 && besiegers.length === 1 && besiegers[0] === t;
       } else if (type === 'merge') {
         const b = tc.army, mass = Math.max(myP, power(b)) < need * 1.2, near = dist[t] <= 9;
-        if (a.count >= 12 && b.count >= 12 && !mass && !P.mergeK && !(t === capI && capWeak)) continue;
+        let rescue = false; if (V.threat && tc.land && isTown(tc)) { const st = strike.get(t) || 0, bp = power(b) + defBonus(S, t); rescue = st > bp && bp + myP >= st * 0.9; }
+        if (a.count >= 12 && b.count >= 12 && !mass && !P.mergeK && !rescue && !(t === capI && capWeak)) continue;
         s = mass && near && dist[t] <= dist[i] ? 9 + (a.count + b.count) * 0.05 : dist[t] < dist[i] ? (near ? 3 : 1) : (a.count < 8 && dist[t] <= dist[i] ? 0.8 : 0);
         if (!near && dist[i] > 9 && a.count < 40 && dist[t] <= dist[i]) s = Math.max(s, 2.5);
         if (P.mergeK && near && dist[t] <= dist[i]) s = Math.max(s, 2 + Math.min(a.count, b.count) * P.mergeK);
+        if (rescue) s += 12;
         if (t === capI && capWeak) s += 25 + a.count * 0.2;
       } else {
+        let townS = 0;
         if (tc.land) {
           let gain = tc.owner === n ? 0 : 1;
           for (const q of NB[t]) { if (q < 0) continue; const c = cells[q]; if (c.land && !c.army && !isSite(c) && c.owner !== n && (c.owner < 0 || hostile(S, n, c.owner))) gain++; }
           s = gain * P.gain;
-          if (isTown(tc) && tc.owner !== n) { big = ownCapital(S, tc); s += P.town + (big ? 400 : 0); }
-          else if (tc.port && tc.owner !== n) s += 6;
+          if (isTown(tc) && tc.owner !== n) { big = ownCapital(S, tc); s += P.town + (big ? 400 : 0); townS = s; }
         }
         s += (dist[i] - dist[t]) * P.appr * Math.min(2, a.count / 8);
         if (capDist && a.count >= P.capMin && capDist[i] < 999) s += (capDist[i] - capDist[t]) * (bold ? Math.max(1, P.cap) : P.cap) * Math.min(3, a.count / 15);
+        // a detachment can take an open town while the main body stays free to act
+        if (V.split && townS && !big && mv === full.count && full.count >= 30) for (const f of [0.25, 0.5]) { const m2 = movers(S, i, f); if (m2 < 1) continue;
+          if ((strike ? strike.get(t) || 0 : 0) > m2 * (0.7 + 0.1 * full.morale) + 4) continue; const sf = townS + 4; if (sf > bs) { bs = sf; best = { from: i, to: t, frac: f }; } break; }
       }
-      if (type !== 'merge' && !big) { const th = enemyPowerNear(S, n, t, 2); if (th > (after + defBonus(S, t)) * 1.1) s -= Math.min(bold ? 6 : P.danger, a.count * 0.5); }
+      if (type !== 'merge' && !big) { const th = V.threat ? strike.get(t) || 0 : enemyPowerNear(S, n, t, 2); if (th > (after + defBonus(S, t)) * 1.1) s -= V.threat ? Math.min(bold ? 8 : 20, a.count * 0.6) : Math.min(bold ? 6 : P.danger, a.count * 0.5); }
+      if (V.threat && cell.land && isTown(cell) && i !== capI && type !== 'attack') { const st = strike.get(i) || 0, left = full.count - mv; if (st > left * (0.7 + 0.1 * full.morale) + (left > 0 ? defBonus(S, i) : 0)) s -= 12; }   // do not walk out of a town about to be hit
       if (cell.unrest > 0 && mv === full.count) s -= 8;      // someone has to hold a restless town, unless a garrison stays automatically
       if (i === capI) { if (sortie) s += 20; else if (besiegers.length) s -= 1000; else s += a.count >= P.garr ? 3 : -2; }
       if (s > bs) { bs = s; best = { from: i, to: t }; }
     }
-  });
+  }
   return best;
 }
 const pickFor = (S, n) => (S.ai[n] === 1 ? aiPick : aiPick2)(S, n);
@@ -662,7 +688,13 @@ function aiEconomy(S, n) {
   if (S.noInvest && S.noInvest[n]) { N.fund = 0; }
   else {
     const capDanger = enemyPowerNear(S, n, capI, 4) > 0;
-    N.fund = Math.min(N.gold, capDanger ? 0 : N.fund + Math.round(inc.gold * 0.4));
+    const vet = vetOf(S, n).eco, strike = vet ? strikeMap(S, n) : null; let hot = false;
+    if (vet) { const need = []; cells.forEach((c, i) => { if (c.owner !== n || !isTown(c) || c.unrest) return; const st = strike.get(i) || 0; if (!st) return; hot = true;
+        const have = (c.army ? power(c.army) : 0) + defBonus(S, i); if (st > have) need.push([i, Math.ceil(st - have) + 2, i === capI ? 1 : 0]); });
+      need.sort((a, b) => b[2] - a[2] || a[1] - b[1]); for (const [i, k] of need) if (k <= N.gold) recruit(S, n, i, k);   // only where the gold actually closes the gap
+      N.fund = Math.min(N.fund, N.gold); }
+    const share = !vet ? 0.4 : hot ? 0.25 : S.round <= 15 ? 0.6 : 0.45;
+    N.fund = Math.min(N.gold, capDanger ? 0 : N.fund + Math.round(inc.gold * share));
     // score every possible investment by gold returned per gold spent, then buy the best one or save toward it
     const opts = [], only = S.only && S.only[n], add = (kind, score, cost, fn) => { if (cost >= 0 && (!only || only.includes(kind))) opts.push({ score, cost, fn }); };
     const safe = i => enemyPowerNear(S, n, i, 4) === 0, pS = inc.perShop, ctx = ecoCtx(S, n);
@@ -720,7 +752,7 @@ function aiEndDiplomacy(S, n) {
     const touching = S.cells.some((c, i) => c.land && c.owner === n && NB[i].some(q => q >= 0 && S.cells[q].owner === m));
     if (touching) { setPact(S, n, m, false); S.log.push(`${S.nations[n].name} has nowhere left to expand and broke its pact with ${S.nations[m].name}.`); } }
 }
-function aiTurnAll(S) { const n = S.cur; aiDiplomacy(S, n); aiEconomy(S, n); while (S.movesLeft > 0 && S.winner < 0) { const m = pickFor(S, n); if (!m) break; doMove(S, m.from, m.to); } if (S.winner < 0) aiEndDiplomacy(S, n); }
+function aiTurnAll(S) { const n = S.cur; aiDiplomacy(S, n); aiEconomy(S, n); while (S.movesLeft > 0 && S.winner < 0) { const m = pickFor(S, n); if (!m) break; if (!doMove(S, m.from, m.to, m.frac)) break; } if (S.winner < 0) aiEndDiplomacy(S, n); }
 // ===LOGIC-END===
 
 // ---- UI ----
@@ -974,7 +1006,7 @@ function runTurn() {
     if (S.winner >= 0) return gameOver();
     const m = S.movesLeft > 0 ? pickFor(S, n) : null;
     if (!m) { aiEndDiplomacy(S, n); nextTurn(S); render(); timer = setTimeout(runTurn, speed()); return; }
-    doMove(S, m.from, m.to); last = m; render(); timer = setTimeout(step, speed());
+    if (!doMove(S, m.from, m.to, m.frac)) S.movesLeft = 0; last = m; render(); timer = setTimeout(step, speed());
   };
   timer = setTimeout(step, speed());
 }
