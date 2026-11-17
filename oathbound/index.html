@@ -68,7 +68,7 @@ const ri = (S, n) => Math.floor(rnd(S) * n), pick = (S, a) => a[ri(S, a.length)]
 function shuffle(S, a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = ri(S, i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const STATS = ['might', 'agility', 'mind', 'spirit'], STAT_NAME = { might: 'Might', agility: 'Agility', mind: 'Mind', spirit: 'Spirit' };
-const K = { glance: 4, mindCrit: 4, mightHp: 2, spiritResist: 0.03, spiritHeal: 0.03, focus: 0.7, campLv: [-0.2, 0.85, 2.7, 4.4, 5.9], vetLv: [-0.22, 0.9, 1.6, 2.0, 1.15], conLv: 2.5, rankLv: 1.0, hp: 1.9, atk: 2.35, heroHeal: 0.15, vetHp: 1.25, vetAtk: 0.5, vetHeal: 0.12 };   // global difficulty knobs, set by simulation
+const K = { glance: 4, mindCrit: 4, mightHp: 2, spiritResist: 0.03, spiritHeal: 0.03, focus: 0.7, campLv: [-0.32, 1.1, 3.05, 4.8, 6.25], vetLv: [-0.1, 0.75, 1.5, 2.3, 1.8], conLv: 2.5, rankLv: 1.0, hp: 2.0, atk: 2.6, heroHeal: 0.15, vetHp: 1.3, vetAtk: 0.5, vetHeal: 0.12 };   // global difficulty knobs, set by simulation
 
 const STATE_INFO = {
   Burning: 'Takes fire damage at the start of each of its turns. Ignores armour.',
@@ -132,7 +132,7 @@ const SK = {
   sunburst: { n: 'Sunburst', ty: 'spell', tg: 'all', m: 0.9, holy: true, ap: [['Stunned', 1, 0.25]], pay: { s: ['Exposed', 'Burning'], m: 1.5 }, cd: 4, w: 9 },
   crushing: { n: 'Crushing Blow', ty: 'melee', tg: 'one', m: 1.4, ap: [['Exposed', 3, 1]], cd: 2, w: 8 },
   judgement: { n: 'Judgement', ty: 'melee', tg: 'one', m: 1.1, holy: true, pay: { s: ['Exposed', 'Stunned'], m: 1.6, ap: ['Stunned', 1] }, cd: 3, w: 8 },
-  holyfire: { n: 'Holy Fire', ty: 'melee', tg: 'one', m: 1.4, holy: true, ap: [['Burning', 3, 1]], leech: 0.7, cd: 3, w: 9 },
+  holyfire: { n: 'Holy Fire', ty: 'melee', tg: 'one', m: 1.4, holy: true, ap: [['Burning', 3, 1]], leech: 1.0, cd: 3, w: 9 },
   // enemies
   e_hit: { n: 'Strike', ty: 'melee', tg: 'one', m: 1 },
   e_shot: { n: 'Shot', ty: 'ranged', tg: 'one', m: 1 },
@@ -183,7 +183,7 @@ function skillDesc(sk) {
 const CLASSES = {
   warrior: { n: 'Warrior', row: 'F', hp: 30, hpl: 8, st: [4, 2, 1, 2], grow: ['might', 'agility'], wp: ['sword', 'axe', 'mace', 'spear', 'flail', 'warhammer', 'rapier', 'crossbow'], shield: true, armor: 3, base: ['bash', 'sunder', 'taunt', 'trip', 'cleave'], start: ['sword', 'shield', 'medium'],
     blurb: 'Holds the front row. Stuns, exposes and sets enemies alight for others to finish.',
-    subs: { guardian: { n: 'Guardian', sk: ['bulwark', 'slam', 'laststand'], blurb: 'Shields the party and turns Exposed enemies into Stunned ones.' }, berserker: { n: 'Berserker', sk: ['reckless', 'execute', 'whirl'], blurb: 'Huge hits on Exposed, Stunned and Prone enemies, at the cost of safety.' } } },
+    subs: { guardian: { n: 'Guardian', sk: ['bulwark', 'slam', 'laststand'], blurb: 'Shields the party and turns Exposed enemies into Stunned ones.' }, berserker: { n: 'Berserker', sk: ['reckless', 'execute', 'whirl'], blurb: 'Huge hits on Exposed and Stunned enemies, and heals by dealing damage.' } } },
   rogue: { n: 'Rogue', row: 'F', hp: 22, hpl: 6, st: [2, 4, 2, 1], grow: ['agility', 'might'], wp: ['dagger', 'sword', 'bow', 'rapier', 'crossbow'], shield: false, armor: 2, base: ['knife', 'backstab', 'smoke', 'hamstring', 'dirty'], start: ['dagger', null, 'light'],
     blurb: 'Exposes, burns and stuns single targets, and punishes any enemy that is Exposed or Stunned.',
     subs: { assassin: { n: 'Assassin', sk: ['ambush', 'garrote', 'deathmark'], blurb: 'Melee burst that cashes in every harmful state.' }, ranger: { n: 'Ranger', sk: ['aimed', 'volley', 'pinning'], blurb: 'Fights from the back row with a bow; exposes whole rows and shoots fire arrows.' } } },
@@ -338,13 +338,15 @@ const TALENTS = {
   lightbringer: [[['Gentle Hands', { healm: 0.2 }], ['Devotion', { spirit: 1, hp: 6 }]], [['Beacon', { aura: { regen: 2 } }], ['Sanctified', { ward: 3 }]], [['Radiant', { vs: [['Exposed', 0.25], ['Burning', 0.25]] }], ['Swift Prayers', { cdr: 1 }]], [['Benediction', { aura: { hit: 1, regen: 1 } }], ['Martyr', { hp: 14 }]], [['Miracle Worker', { healm: 0.3 }], ['Divine Wrath', { spd: 4 }]]],
   warpriest: [[['Zeal', { dmg: 3, hp: 6 }], ['Devotion', { spirit: 1, hp: 6 }]], [['Armour of Faith', { arm: 2 }], ['Smiter', { hit: 2 }]], [['Crusader', { aura: { dmg: 1 } }], ['Righteous Fury', { vs: [['Exposed', 0.25]] }]], [['Hammer of Judgement', { chance: 0.15, procs: [['Stunned', 0.1]] }], ['Blood for Blessing', { leech: 0.15 }]], [['Avatar of War', { dr: 0.12, lowhp: 0.2 }], ['Shepherd', { healm: 0.25, aura: { regen: 2 } }]]]
 };
+// each path's built-in strengths, on top of its skills
+const SUBFX = { guardian: {}, berserker: { leech: 0.2, hp: 14, dr: 0.15 }, assassin: { def: 3, crit: 1, hp: 10, leech: 0.1 }, ranger: {}, pyromancer: {}, stormcaller: { chance: 0.1, ward: 1 }, lightbringer: {}, warpriest: { arm: 2, dr: 0.12, healm: 0.5, aura: { regen: 5 } } };
 const talentsOf = h => h.sub ? (h.tal || []).map((c, k) => c === 0 || c === 1 ? TALENTS[h.sub][k][c] : null).filter(Boolean) : [];
 function setTalent(S, hi, k, c) { const h = S.party[hi]; if (!h || !h.sub || k < 0 || k > h.level - 6 || (c !== 0 && c !== 1)) return false; h.tal = h.tal || []; const m0 = maxHp(h); h.tal[k] = c; h.hp = clamp(h.hp + Math.max(0, maxHp(h) - m0), 1, maxHp(h)); return true; }
 
 // ---------- heroes ----------
 function heroFx(h) { const fx = {}, sets = {}; for (const g of Object.values(h.gear)) { if (!g) continue; mergeFx(fx, g.fx); if (g.set) sets[g.set] = (sets[g.set] || 0) + 1; }
   for (const [k, n] of Object.entries(sets)) for (const [need, b] of Object.entries(SETS[k].bonus)) if (n >= +need) mergeFx(fx, b);
-  for (const t of talentsOf(h)) mergeFx(fx, t[1]); if (h.bonus) mergeFx(fx, h.bonus); return fx; }
+  if (h.sub && SUBFX[h.sub]) mergeFx(fx, SUBFX[h.sub]); for (const t of talentsOf(h)) mergeFx(fx, t[1]); if (h.bonus) mergeFx(fx, h.bonus); return fx; }
 function heroStat(h, s) { const c = CLASSES[h.cls], L = h.level - 1, fx = heroFx(h);
   return c.st[STATS.indexOf(s)] + (c.grow[0] === s ? L : c.grow[1] === s ? L >> 1 : 0) + (fx[s] || 0) + (c.grow[0] === s ? fx.primary || 0 : 0) - (s === 'agility' && h.gear.a && ARMOR[h.gear.a.type].slow ? 1 : 0); }
 function maxHp(h) { const c = CLASSES[h.cls]; return Math.max(1, Math.round((c.hp + c.hpl * (h.level - 1) + (heroFx(h).hp || 0) + K.mightHp * heroStat(h, 'might')) * (1 - 0.12 * h.wounds))); }
@@ -650,7 +652,8 @@ function rollGear(S, lvl, kind) {
   const tier = S.camp ? clamp(Math.ceil(lvl * 0.75), 1, 5) : clamp(lvl, 1, 3);
   if (!kind && rnd(S) < [0, 0.05, 0.11, 0.16, 0.26][clamp(lvl, 1, 4)]) { const it = rollSet(S, tier); if (it) return it; }
   for (let tries = 0; tries < 30; tries++) { const r = kind || pick(S, ['weapon', 'weapon', 'armor', 'shield']); let it;
-    if (r === 'weapon') it = mkWeapon(pick(S, Object.keys(WT)), tier); else if (r === 'armor') it = mkArmor(pick(S, Object.keys(ARMOR)), tier); else it = mkShield(tier, pick(S, Object.keys(OFF)));
+    const want = S.party.filter(h => h.sub).map(h => SUBWP[h.sub]);
+    if (r === 'weapon') it = mkWeapon(want.length && rnd(S) < 0.5 ? pick(S, want) : pick(S, Object.keys(WT)), tier); else if (r === 'armor') it = mkArmor(pick(S, Object.keys(ARMOR)), tier); else it = mkShield(tier, pick(S, Object.keys(OFF)));
     rollAffixes(S, it, rollRarity(S, lvl));
     if (S.party.some(h => canUse(h, it) && itemScore(h.gear[slotOf(h, it)]) <= itemScore(it) && !(h.gear[slotOf(h, it)] && h.gear[slotOf(h, it)].n === it.n))) return it; }
   return rollTrinket(S, tier);
@@ -924,10 +927,16 @@ function levelUp(S) {
   S.lvl = { level: S.party[0].level, gained, need: S.party[0].level === 3 ? S.party.map(() => true) : [], needT: S.party[0].level >= 6 ? S.party.map(h => !!h.sub) : [] }; S.screen = 'levelup';
   S.party.forEach((h, i) => { for (const k of gained[i]) if (h.eq.length < 4) h.eq.push(k); else if (h.ctrl === 'ai') autoEquip(h); });
 }
-function pickSub(S, hi, sub) { const h = S.party[hi]; if (!S.lvl || !S.lvl.need[hi] || !CLASSES[h.cls].subs[sub]) return false; h.sub = sub; S.lvl.need[hi] = false; const sk = CLASSES[h.cls].subs[sub].sk[0]; S.lvl.gained[hi] = [sk]; subGear(h, sub);
+function pickSub(S, hi, sub, take) { const h = S.party[hi]; if (!S.lvl || !S.lvl.need[hi] || !CLASSES[h.cls].subs[sub]) return false; h.sub = sub; S.lvl.need[hi] = false; const sk = CLASSES[h.cls].subs[sub].sk[0]; S.lvl.gained[hi] = [sk]; subGear(h, sub, S, take);
   if (h.eq.length < 4) h.eq.push(sk); else { const drop = h.eq.slice().sort((a, b) => SK[a].w - SK[b].w)[0]; if (h.ctrl === 'ai' || SK[drop].w < SK[sk].w) h.eq[h.eq.indexOf(drop)] = sk; }
   return true; }
-function subGear(h, sub) { if (sub === 'ranger') { const w = h.gear.w; if (w.type !== 'bow' && w.type !== 'crossbow' && !w.set) h.gear.w = finish({ k: 'weapon', type: 'bow', tier: w.tier, afx: w.afx.slice() }); h.row = 'B'; } if (sub === 'warpriest') h.row = 'F'; if (sub === 'lightbringer') h.row = 'B'; h.hp = Math.min(h.hp, maxHp(h)); }
+// each path's signature weapon: on choosing a path the hero may have their weapon remade as it, keeping its quality and properties;
+// the old weapon goes to the pack. Rangers need their bow to fight from the back row.
+const SUBWP = { guardian: 'sword', berserker: 'axe', assassin: 'dagger', ranger: 'bow', pyromancer: 'staff', stormcaller: 'staff', lightbringer: 'mace', warpriest: 'warhammer' };
+const pathWeapon = (h, sub) => { const w = h.gear.w, t = SUBWP[sub]; return !w || w.type === t || w.set || w.uq || (sub === 'ranger' && w.type === 'crossbow') ? null : finish({ k: 'weapon', type: t, tier: w.tier, afx: (w.afx || []).filter(a => AFFIX[a].on !== 'a') }); };
+function subGear(h, sub, S, take) { const nw = take === false ? null : pathWeapon(h, sub);
+  if (nw) { if (S) { S.stash.push(h.gear.w); note(S, nw); } h.gear.w = nw; if (WT[nw.type].two && h.gear.off) { if (S) S.stash.push(h.gear.off); h.gear.off = null; } }
+  if (sub === 'ranger') h.row = 'B'; if (sub === 'warpriest') h.row = 'F'; if (sub === 'lightbringer') h.row = 'B'; h.hp = Math.min(h.hp, maxHp(h)); }
 function pickTalent(S, hi, c) { if (!S.lvl || !S.lvl.needT[hi] || !setTalent(S, hi, S.lvl.level - 6, c)) return false; S.lvl.needT[hi] = false; return true; }
 function closeLevel(S) { if (!S.lvl || S.lvl.need.some(Boolean) || S.lvl.needT.some(Boolean)) return false; S.lvl = null; if (lvlDue(S)) levelUp(S); else afterNode(S); return true; }
 function setEq(S, hi, ids) { const h = S.party[hi], k = known(h); if (ids.length > 4 || ids.some(x => !k.includes(x)) || new Set(ids).size !== ids.length) return false; h.eq = ids.slice(); return true; }
@@ -1029,7 +1038,7 @@ function chapterEnd(S, win) {
 function closeChapter(S) { if (S.screen !== 'chapter') return false; if (S.camp.last.win && S.camp.ch <= 5) S.camp.ch++; enterTown(S); return true; }
 // the training hall: change a talent, or retrain into the other path
 function retrain(S, hi, k, c) { const h = S.party[hi]; if (S.screen !== 'town' || !h || !h.tal || h.tal[k] === c || h.tal[k] === undefined || S.gold < trainCost(S, 'talent') || !setTalent(S, hi, k, c)) return false; S.gold -= trainCost(S, 'talent'); h.hp = Math.min(h.hp, maxHp(h)); return true; }
-function changeSub(S, hi) { const h = S.party[hi]; if (S.screen !== 'town' || !h || !h.sub || S.gold < trainCost(S, 'sub')) return false; S.gold -= trainCost(S, 'sub'); h.sub = Object.keys(CLASSES[h.cls].subs).find(k => k !== h.sub); subGear(h, h.sub); autoEquip(h); h.hp = Math.min(h.hp, maxHp(h)); return true; }
+function changeSub(S, hi, take) { const h = S.party[hi]; if (S.screen !== 'town' || !h || !h.sub || S.gold < trainCost(S, 'sub')) return false; S.gold -= trainCost(S, 'sub'); h.sub = Object.keys(CLASSES[h.cls].subs).find(k => k !== h.sub); subGear(h, h.sub, S, take); autoEquip(h); h.hp = Math.min(h.hp, maxHp(h)); return true; }
 
 function newRun(seed, seats, diff) {
   const S = { v: 5, diff: diff ? 1 : 0, seed: seed | 0, seed0: seed | 0, party: seats.map(newHero), gold: 20, xp: 0, bag: [{ id: 'potion', qty: 2 }], stash: [], pos: -1, screen: 'map', C: null, ev: null, loot: null, shop: null, lvl: null, nextMod: null, leader: 0, result: null,
@@ -1045,7 +1054,7 @@ function ending(S) { const q = S.q, f = q.flags, p = [];
 
 // ---------- autoplay: every decision an AI seat (or a test) needs ----------
 function aiGive(S, it) { let best = -1, bs = 0; S.party.forEach((h, i) => { if (!canUse(h, it)) return; const slot = slotOf(h, it), cur = h.gear[slot]; let s = itemScore(it) - itemScore(cur) + (cur ? 0 : 1.5); if (it.set) s += setCount(h, it.set) * 1.5 - (cur && cur.set === it.set ? 9 : 0); else if (cur && cur.set && setCount(h, cur.set) > 1) s -= 2;
-    if (it.k === 'weapon') { const w = WT[it.type]; if (cur && cur.type !== it.type) s -= 0.6; if (w.two && h.gear.off) s -= 1; if (it.type === 'staff' && cur.type !== 'staff') s -= h.cls === 'mage' ? -2 : 0.5; if (it.type === 'bow' && h.sub !== 'ranger') s -= 2; if (it.type === 'crossbow' && h.row === 'F') s -= 1.5; if (it.type === 'wand' && cur.type === 'staff') s -= 1; if (h.cls === 'priest' && h.sub !== 'warpriest' && !WT[it.type].sp && WT[cur.type].sp) s -= 2; if (WT[it.type].sp && h.sub === 'warpriest') s -= 2; if (h.sub === 'ranger' && it.type !== 'bow') s -= 3; if (h.cls === 'mage' && !WT[it.type].sp) s -= 3; if (it.type === 'spear' && h.cls === 'priest' && h.sub !== 'warpriest') s -= 1; }
+    if (it.k === 'weapon') { const w = WT[it.type]; if (cur && cur.type !== it.type) s -= 0.6; if (w.two && h.gear.off) s -= 1; if (it.type === 'staff' && cur.type !== 'staff') s -= h.cls === 'mage' ? -2 : 0.5; if (it.type === 'bow' && h.sub !== 'ranger') s -= 2; if (h.sub && SUBWP[h.sub] === it.type) s += 0.8; else if (h.sub && cur && SUBWP[h.sub] === cur.type) s -= 0.8; if (it.type === 'crossbow' && h.row === 'F') s -= 1.5; if (it.type === 'wand' && cur.type === 'staff') s -= 1; if (h.cls === 'priest' && h.sub !== 'warpriest' && !WT[it.type].sp && WT[cur.type].sp) s -= 2; if (WT[it.type].sp && h.sub === 'warpriest') s -= 2; if (h.sub === 'ranger' && it.type !== 'bow') s -= 3; if (h.cls === 'mage' && !WT[it.type].sp) s -= 3; if (it.type === 'spear' && h.cls === 'priest' && h.sub !== 'warpriest') s -= 1; }
     if (it.k === 'shield' && h.gear.w && WT[h.gear.w.type].two) s -= 3; if (it.k === 'shield' && it.type === 'tome' && h.sub === 'warpriest') s -= 1; if (it.k === 'shield' && cur && cur.type !== it.type && it.type === 'parry') s -= 1; if (it.k === 'armor' && ARMOR[it.type].slow && h.cls !== 'warrior') s -= 0.5; if (it.k === 'armor' && cur && ARMOR[it.type].rank < ARMOR[cur.type].rank && h.row === 'F') s -= 1;
     if (it.k === 'trinket') { s = itemScore(it) + (h.gear.t1 && h.gear.t2 ? -Math.min(itemScore(h.gear.t1), itemScore(h.gear.t2)) - 0.2 : 1.5); if (h.gear.t1 && h.gear.t2 && h.gear.t1.set) s -= 2; const f = it.fx; for (const st of STATS) if (f[st]) s += CLASSES[h.cls].grow[0] === st ? 1 : -0.3; if (f.primary) s += f.primary; if (f.thorns || f.startGuard || f.arm) s += h.row === 'F' ? 0.5 : -0.5; }
     if (s > bs) { bs = s; best = i; } }); return best; }
@@ -1170,6 +1179,7 @@ function sheet(i) {
     h('p', { class: 'small' }, `${u.arm} armour (subtracted from physical hits), ${u.ward} ward (subtracted from spells), ${u.defb ? `+${u.defb} defence, ` : ''}${u.max} health.`),
     h('h3', null, 'Gear'), [g.w, g.off, g.a, g.t1, g.t2].filter(Boolean).map(it => h('div', { class: 'small' }, h('b', { class: 'rn' + it.r }, it.n), ': ', itemDesc(it))),
     activeSets(x).map(t => h('div', { class: 'small rn4' }, t)),
+    x.sub && Object.keys(SUBFX[x.sub]).length ? h('p', { class: 'small' }, h('b', null, `${subName(x)} strengths: `), fxText(SUBFX[x.sub]) + '.') : null,
     talentsOf(x).length ? [h('h3', null, 'Talents'), talentsOf(x).map(t => h('div', { class: 'small' }, h('b', null, t[0]), ': ', fxText(t[1]), '.'))] : null,
     free ? h('p', null, h('button', { onclick: () => { x.row = x.row === 'F' ? 'B' : 'F'; sheet(i); render(); } }, `Start fights in the ${x.row === 'F' ? 'back' : 'front'} row instead`)) : null,
     x.ctrl === 'ai' ? h('p', null, h('label', null, h('input', { type: 'checkbox', checked: !!x.manual, onchange: e => { x.manual = e.target.checked; render(); } }), ' Control this ally myself in combat')) : null,
@@ -1369,7 +1379,7 @@ function renderTown(main) {
     sec('Merchant', !c.estate, shopGrid(), h('p', { class: 'row' }, healButton(), h('button', { onclick: openPack }, `Vault and pack (${S.stash.length}): sort, hand out and sell gear`))),
     sec('Smith', false, smithPanel()),
     sec('Training hall', false, h('p', { class: 'small dim' }, `Swap a talent for ${trainCost(S, 'talent')} gold, or retrain a hero into their class's other path for ${trainCost(S, 'sub')} gold (talents carry across by position).`),
-      S.party.map((x, i) => h('div', { class: 'item', style: 'padding:6px 10px' }, h('b', null, `${x.name}, ${subName(x)}`), x.sub ? h('button', { class: 'small', style: 'margin-left:8px', disabled: S.gold < trainCost(S, 'sub'), onclick: () => { changeSub(S, i); render(); } }, `Retrain as ${Object.values(CLASSES[x.cls].subs).find(v => v.n !== subName(x)).n} (${trainCost(S, 'sub')})`) : h('span', { class: 'small dim' }, ' chooses a path at level 3'),
+      S.party.map((x, i) => h('div', { class: 'item', style: 'padding:6px 10px' }, h('b', null, `${x.name}, ${subName(x)}`), x.sub ? h('button', { class: 'small', style: 'margin-left:8px', disabled: S.gold < trainCost(S, 'sub'), onclick: () => { changeSub(S, i, true); render(); } }, `Retrain as ${Object.values(CLASSES[x.cls].subs).find(v => v.n !== subName(x)).n} (${trainCost(S, 'sub')})`) : h('span', { class: 'small dim' }, ' chooses a path at level 3'),
         x.sub ? (x.tal || []).map((ch, k) => ch === undefined || ch === null ? null : h('div', { class: 'row small', style: 'margin-top:4px' }, h('span', { class: 'dim', style: 'min-width:60px' }, `Level ${k + 6}`), TALENTS[x.sub][k].map((t, o) => h('button', { class: 'small' + (ch === o ? ' on' : ''), disabled: ch === o || S.gold < trainCost(S, 'talent'), title: fxText(t[1]), onclick: () => { retrain(S, i, k, o); render(); } }, `${t[0]}: ${fxText(t[1])}`)))) : null,
         x.sub && !(x.tal || []).length ? h('div', { class: 'small dim' }, 'Talents begin at level 6.') : null)))));
 }
@@ -1389,9 +1399,11 @@ function renderLevel(main) {
   const L = S.lvl; L.need.forEach((n, i) => { if (n && S.party[i].ctrl === 'ai') pickSub(S, i, aiSub(S, i)); }); L.needT.forEach((n, i) => { if (n && S.party[i].ctrl === 'ai') pickTalent(S, i, Math.random() < 0.5 ? 0 : 1); });
   const card = h('div', { class: 'card' }, h('h2', null, `Level ${L.level}`), h('p', null, 'The whole party grows stronger: more health, higher stats, and new skills.'));
   S.party.forEach((x, i) => { const c = CLASSES[x.cls];
-    if (L.need[i]) card.append(h('h3', null, `${x.name} (${x.player}): choose a path`), h('div', { class: 'grid3' }, Object.entries(c.subs).map(([k, sub]) => h('div', { class: 'item' }, h('b', null, sub.n), h('div', { class: 'small' }, sub.blurb), sub.sk.map((id, n) => h('div', { class: 'small dim' }, `Level ${n + 3}: ${SK[id].n}. ${skillDesc(SK[id])}`)), h('p', null, h('button', { class: 'primary', onclick: () => { pickSub(S, i, k); render(); } }, `Become a ${sub.n}`))))));
+    if (L.need[i]) card.append(h('h3', null, `${x.name} (${x.player}): choose a path`), h('div', { class: 'grid3' }, Object.entries(c.subs).map(([k, sub]) => h('div', { class: 'item' }, h('b', null, sub.n), h('div', { class: 'small' }, sub.blurb), Object.keys(SUBFX[k]).length ? h('div', { class: 'small rn1' }, 'Built in: ' + fxText(SUBFX[k]) + '.') : null, sub.sk.map((id, n) => h('div', { class: 'small dim' }, `Level ${n + 3}: ${SK[id].n}. ${skillDesc(SK[id])}`)), (() => { const nw = pathWeapon(x, k); if (!nw) return h('p', { class: 'small dim' }, `Signature weapon: ${WT[SUBWP[k]].n}. ${x.gear.w.type === SUBWP[k] ? 'You already carry one.' : 'Your current weapon is special and stays as it is.'}`);
+        const box = h('input', { type: 'checkbox', checked: true }); return [h('label', { class: 'small', style: 'display:block;margin-top:6px' }, box, ` Remake my ${x.gear.w.n} as a `, h('b', { class: 'rn' + nw.r }, nw.n), ` (${itemDesc(nw)}) The old weapon goes to the pack.`), h('p', null, h('button', { class: 'primary', onclick: () => { pickSub(S, i, k, box.checked); render(); } }, `Become a ${sub.n}`))]; })(),
+        pathWeapon(x, k) ? null : h('p', null, h('button', { class: 'primary', onclick: () => { pickSub(S, i, k); render(); } }, `Become a ${sub.n}`))))));
     else if (L.needT[i]) card.append(h('h3', null, `${x.name} (${x.player}): choose a talent`), h('div', { class: 'grid3' }, TALENTS[x.sub][L.level - 6].map((t, o) => h('div', { class: 'item' }, h('b', null, t[0]), h('div', { class: 'small' }, fxText(t[1]) + '.'), h('p', null, h('button', { class: 'primary', onclick: () => { pickTalent(S, i, o); render(); } }, 'Take ' + t[0]))))));
-    else card.append(h('div', { class: 'item small' }, h('b', null, x.name), L.level >= 6 && x.sub && x.tal[L.level - 6] !== undefined ? ` takes ${TALENTS[x.sub][L.level - 6][x.tal[L.level - 6]][0]}. ` : '', L.level === 3 ? ` is now a ${subName(x)}. ` : ' ', L.gained[i].length ? L.gained[i].map(id => h('div', null, 'New skill: ', h('b', null, SK[id].n), '. ', skillDesc(SK[id]), x.eq.includes(id) ? '' : ' (Not equipped: open the hero sheet to swap it in.)')) : L.level >= 6 ? '' : 'Stronger, but no new skill this level.')); });
+    else card.append(h('div', { class: 'item small' }, h('b', null, x.name), L.level >= 6 && x.sub && x.tal[L.level - 6] !== undefined ? ` takes ${TALENTS[x.sub][L.level - 6][x.tal[L.level - 6]][0]}. ` : '', L.level === 3 ? ` is now ${/^[AEIOU]/.test(subName(x)) ? 'an' : 'a'} ${subName(x)}. ` : ' ', L.gained[i].length ? L.gained[i].map(id => h('div', null, 'New skill: ', h('b', null, SK[id].n), '. ', skillDesc(SK[id]), x.eq.includes(id) ? '' : ' (Not equipped: open the hero sheet to swap it in.)')) : L.level >= 6 ? '' : 'Stronger, but no new skill this level.')); });
   card.append(h('p', null, h('button', { class: 'primary', disabled: L.need.some(Boolean) || L.needT.some(Boolean), onclick: () => { closeLevel(S); render(); } }, 'Continue')));
   main.append(card);
 }
