@@ -43,8 +43,10 @@
   @keyframes rise { from { opacity: 1; transform: translateY(6px); } to { opacity: 0; transform: translateY(-14px); } }
   .log { height: 118px; overflow-y: auto; background: #151210; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 13px; color: var(--dim); } .log div:last-child { color: var(--ink); }
   .acts button { min-width: 96px; }
-  .acts button.combo { border-color: #ffd36b; box-shadow: 0 0 8px rgba(255,211,107,0.55); }
-  .pv { margin-top: 4px; padding: 3px 5px; border-radius: 4px; background: #1c2a1a; font-size: 12px; } .pv.combo { background: #3a3110; outline: 1px solid #ffd36b; } .acts .cd { color: var(--dim); font-size: 12px; }
+  .meter { position: relative; height: 12px; background: #111; border-radius: 3px; margin-top: 3px; font-size: 10px; } .meter i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; } .meter span { position: relative; padding-left: 4px; color: #fff; }
+  .meter.bleed i { background: #9c2b2b; } .meter.poison i { background: #4f7f2a; } .meter.stagger i { background: #a8862a; }
+  .chip.Marked { background: #6a2540; } .chip.Chilled { background: #2a5a7a; } .chip.Charged { background: #5a4a8a; } .chip.Poisoned { background: #3f5f22; } .chip.Oiled { background: #4a3a1a; }
+  .pv { margin-top: 4px; padding: 3px 5px; border-radius: 4px; background: #1c2a1a; font-size: 12px; } .acts .cd { color: var(--dim); font-size: 12px; }
   .choice { display: block; width: 100%; text-align: left; margin: 6px 0; padding: 10px 12px; } .choice small { display: block; color: var(--dim); }
   .item { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; background: var(--panel2); } .item.sold { opacity: 0.4; } .item b { color: var(--gold); }
   .item.r0 { border-left: 4px solid #8d8d8d; } .item.r1 { border: 1px solid #4f9a4b; border-left-width: 4px; } .item.r2 { border: 1px solid #4a8fe0; border-left-width: 4px; } .item.r3 { border: 1px solid #b05be0; border-left-width: 4px; box-shadow: 0 0 6px rgba(176,91,224,0.35); } .item.r4 { border: 1px solid #2cc9b0; border-left-width: 4px; box-shadow: 0 0 6px rgba(44,201,176,0.35); }

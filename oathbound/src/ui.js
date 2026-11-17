@@ -1,5 +1,6 @@
 // ---------- UI ----------
-const $ = id => document.getElementById(id), SAVE = 'oathbound-slots', VER = 5;
+const $ = id => document.getElementById(id), SAVE = 'oathbound-slots', VER = 6;
+const loadable = T => T && (T.v === 5 || T.v === 6);
 function h(tag, attrs, ...kids) { const e = document.createElement(tag);
   for (const k in attrs || {}) { const v = attrs[k]; if (k === 'class') e.className = v; else if (k.slice(0, 2) === 'on') e[k] = v; else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v); }
   for (const c of kids.flat(3)) { if (c == null || c === false || c === '') continue; e.append(c.nodeType ? c : document.createTextNode(c)); } return e; }
@@ -9,6 +10,8 @@ const NAMES = { warrior: 'Balian', rogue: 'Strider', mage: 'Mithrandir', priest:
 const store = { all() { try { const a = JSON.parse(localStorage.getItem(SAVE)); return Array.isArray(a) ? a.concat([null, null, null]).slice(0, 3) : [null, null, null]; } catch (e) { return [null, null, null]; } },
   put(i, v) { const a = this.all(); a[i] = v ? { at: Date.now(), S: v } : null; try { localStorage.setItem(SAVE, JSON.stringify(a)); return true; } catch (e) { return false; } } };
 let slot = 0, saveFail = false;
+// events the player has already met, in any game in this browser; new ones are offered first
+function seenEvents(add) { let a = []; try { a = JSON.parse(localStorage.getItem('oathbound-seen')) || []; } catch (e) {} if (add) { const n = a.length; for (const id of add) if (!a.includes(id)) a.push(id); if (a.length !== n) { if (a.length >= EVENTS.length - 8) a = a.slice(-Math.floor(EVENTS.length / 3)); try { localStorage.setItem('oathbound-seen', JSON.stringify(a)); } catch (e) {} } } return a; }
 const slotLabel = x => { const T = x.S, p = T.party.map(h => h.name).join(', '); return `${T.camp ? (T.camp.saga ? `Renowned heroes, contract rank ${T.camp.rank}` : `Campaign, chapter ${T.camp.ch}`) : 'Single adventure'}${T.diff ? ' (Veteran)' : ''}: ${p}, level ${T.party[0].level}`; };
 function exportSave(i) { const x = store.all()[i]; if (!x) return; const txt = JSON.stringify(x.S), name = `oathbound-${x.S.party.map(h => h.name).join('-').toLowerCase()}.json`;
   // inside Claude the page asks the viewer for permission to save; on a normal web page a plain download link works
@@ -17,7 +20,7 @@ function exportSave(i) { const x = store.all()[i]; if (!x) return; const txt = J
   const ta = h('textarea', { readonly: true, style: 'width:100%;height:120px;font:11px monospace;background:#111;color:#ccc' }); ta.value = txt;
   modal(h('h2', null, 'Export save'), h('p', null, `You should be offered a file called ${name} to save. If that does not appear, copy this text into a file instead; Import accepts either.`), ta, h('p', null, h('button', { class: 'primary', onclick: closeModal }, 'Close'))); }
 function importSave(i) { const ta = h('textarea', { placeholder: 'Or paste save text here', style: 'width:100%;height:120px;font:11px monospace;background:#111;color:#ccc' }), msg = h('p', { class: 'dim' }),
-    load = txt => { try { const T = JSON.parse(txt); if (!T || T.v !== VER || !T.party || !T.q) throw 0; store.put(i, T); closeModal(); render(); } catch (e) { msg.textContent = 'That is not a save from this version of the game.'; } },
+    load = txt => { try { const T = JSON.parse(txt); if (!loadable(T) || !T.party || !T.q) throw 0; store.put(i, migrate(T)); closeModal(); render(); } catch (e) { msg.textContent = 'That is not a save from this version of the game.'; } },
     file = h('input', { type: 'file', accept: '.json,application/json,text/plain', onchange: e => { const f = e.target.files[0]; if (f) f.text().then(load); } });
   modal(h('h2', null, `Import into slot ${i + 1}`), h('p', null, 'Choose a save file, or paste its text. This replaces whatever is in the slot.'), file, ta, msg, h('p', { class: 'row' }, h('button', { class: 'primary', onclick: () => load(ta.value) }, 'Import pasted text'), h('button', { onclick: closeModal }, 'Cancel'))); }
 const humansIdx = () => S.party.map((x, i) => x.ctrl === 'human' ? i : -1).filter(i => i >= 0);
@@ -37,6 +40,7 @@ function render() {
   $('hud').replaceChildren(h('span', { class: 'stat' }, S.q.title, S.diff ? h('b', { style: 'color:var(--red)' }, '  Veteran') : null), h('span', { class: 'stat' }, where), h('span', { class: 'stat' }, 'Level ', h('b', null, String(lv)), lv < maxLevel(S) ? ` (${S.xp}/${xpAt(S, lv)} xp)` : ''), h('span', { class: 'stat' }, 'Gold ', h('b', null, String(S.gold))), saveFail ? h('span', { class: 'stat', style: 'color:var(--red)' }, 'Saving failed: export your save') : '');
   renderParty();
   ({ map: renderMap, combat: renderCombat, event: renderEvent, loot: renderLoot, shop: renderShop, rest: renderRest, levelup: renderLevel, end: renderEnd, town: renderTown, chapter: renderChapter })[S.screen](main);
+  if (S.q && S.q.used) seenEvents(S.q.used);
   if (S.screen === 'end') store.put(slot, null); else if (S.screen !== 'combat') saveFail = !store.put(slot, S);
 }
 
@@ -51,8 +55,8 @@ function renderSetup(main) {
   const used = seats.filter(s => s.ctrl !== 'none'), ok = used.some(s => s.ctrl === 'human');
   main.append(h('div', { class: 'card' }, h('h2', null, 'Gather your party'),
     h('p', null, 'A co-op fantasy adventure for one to four heroes. Each run is a freshly generated three-act quest: a villain, a motive, a twist, and a branching road to the lair. Human players share this screen and take turns; AI allies fill the other seats.'),
-    h('h3', null, 'Saved games'), saves.map((x, i) => h('div', { class: 'item', style: 'padding:6px 10px' }, h('div', { class: 'row' }, h('b', null, `Slot ${i + 1}`), x && x.S.v === VER ? h('span', null, slotLabel(x), h('span', { class: 'dim small' }, ` · ${x.S.q.title} · saved ${new Date(x.at).toLocaleString()}`)) : x ? h('span', { class: 'dim' }, 'A save from an older version, which cannot be loaded.') : h('span', { class: 'dim' }, 'Empty')),
-      h('div', { class: 'row', style: 'margin-top:4px' }, x && x.S.v === VER ? h('button', { class: 'primary small', onclick: () => { slot = i; S = migrate(x.S); render(); } }, 'Continue') : null, x && x.S.v === VER ? h('button', { class: 'small', onclick: () => exportSave(i) }, 'Export') : null,
+    h('h3', null, 'Saved games'), saves.map((x, i) => h('div', { class: 'item', style: 'padding:6px 10px' }, h('div', { class: 'row' }, h('b', null, `Slot ${i + 1}`), x && loadable(x.S) ? h('span', null, slotLabel(x), h('span', { class: 'dim small' }, ` · ${x.S.q.title} · saved ${new Date(x.at).toLocaleString()}`)) : x ? h('span', { class: 'dim' }, 'A save from an older version, which cannot be loaded.') : h('span', { class: 'dim' }, 'Empty')),
+      h('div', { class: 'row', style: 'margin-top:4px' }, x && loadable(x.S) ? h('button', { class: 'primary small', onclick: () => { slot = i; S = migrate(x.S); S.seen = seenEvents(); render(); } }, 'Continue') : null, x && loadable(x.S) ? h('button', { class: 'small', onclick: () => exportSave(i) }, 'Export') : null,
         h('button', { class: 'small', onclick: () => importSave(i) }, 'Import'), x ? h('button', { class: 'small', onclick: () => modal(h('h2', null, `Delete slot ${i + 1}?`), h('p', null, 'This cannot be undone. Export it first if you might want it back.'), h('p', { class: 'row' }, h('button', { class: 'primary', onclick: () => { store.put(i, null); closeModal(); render(); } }, 'Delete'), h('button', { onclick: closeModal }, 'Keep it'))) }, 'Delete') : null,
         h('label', { class: 'small' }, h('input', { type: 'radio', name: 'slot', checked: slot === i, onchange: () => { slot = i; render(); } }), ' start the new game here')))),
     h('h3', null, 'New game'),
@@ -64,7 +68,7 @@ function renderSetup(main) {
     h('p', null, h('button', { class: 'primary', disabled: !ok, onclick: begin }, 'Begin the adventure'), ok ? '' : ' At least one seat must be human.')));
 }
 function begin() { const cur = store.all()[slot]; if (cur && !begin.ok) return modal(h('h2', null, `Overwrite slot ${slot + 1}?`), h('p', null, `It holds: ${slotLabel(cur)}.`), h('p', { class: 'row' }, h('button', { class: 'primary', onclick: () => { begin.ok = true; closeModal(); begin(); } }, 'Overwrite'), h('button', { onclick: closeModal }, 'Cancel'))); begin.ok = false; let p = 0; const list = seats.filter(s => s.ctrl !== 'none').map(s => ({ cls: s.cls, ctrl: s.ctrl, name: (s.name || '').trim() || NAMES[s.cls], player: s.ctrl === 'human' ? 'Player ' + (++p) : '' }));
-  S = (mode ? newCampaign : newRun)((Date.now() ^ (Math.random() * 1e9)) | 0, list, diff); sel = null; render(); }
+  S = (mode ? newCampaign : newRun)((Date.now() ^ (Math.random() * 1e9)) | 0, list, diff); S.seen = seenEvents(); sel = null; render(); }
 
 // ---------- party sidebar and hero sheet ----------
 function renderParty() {
@@ -73,6 +77,7 @@ function renderParty() {
     S.party.map((x, i) => { const u = inFight ? unit(S.C, 'h' + i) : null, hp = u ? u.hp : x.hp, max = u ? u.max : maxHp(x);
       return h('div', { class: 'hero', onclick: () => sheet(i) }, h('div', { class: 'nm' }, h('span', null, h('b', null, x.name), ' ', h('span', { class: 'dim small' }, subName(x))), h('span', { class: 'small dim' }, who(x))),
         hpBar(hp, max), h('div', { class: 'small dim' }, `${hp}/${max} hp · ${x.row === 'F' ? 'front' : 'back'} row`, x.wounds ? ` · ${x.wounds} wound${x.wounds > 1 ? 's' : ''}` : '')); }),
+    S.comp ? (() => { const u = inFight ? S.C.units.find(v => v.comp) : null, hp = u ? u.hp : S.comp.hp; return h('div', { class: 'hero' }, h('div', { class: 'nm' }, h('span', null, h('b', null, S.comp.name), ' ', h('span', { class: 'dim small' }, 'companion')), h('span', { class: 'small dim' }, 'AI')), hpBar(hp, S.comp.max), h('div', { class: 'small dim' }, `${hp}/${S.comp.max} hp · ${COMPANIONS[S.comp.key].d}; ${S.camp ? 'stays for this chapter' : 'stays until the end of this act'}`)); })() : null,
     h('h3', null, 'Supplies'), S.bag.length ? S.bag.map(b => h('div', { class: 'small', title: CONS[b.id].d }, `${CONS[b.id].n} x${b.qty}`)) : h('div', { class: 'small dim' }, 'Nothing.'),
     h('p', null, h('button', { onclick: openPack }, `Gear and pack (${S.stash.length})`)),
     h('p', { class: 'small dim' }, 'Click a hero for stats, gear and skills.')));
@@ -152,9 +157,10 @@ function renderMap(main) {
   const st = S.map[0], bo = S.map[S.map.length - 1];
   svg.append(ink(`M${st.px - 44},${st.py + 6} v-9 l6,-6 l6,6 v9 z M${st.px - 30},${st.py + 12} v-8 l5,-5 l5,5 v8 z`, { fill: '#d9b98a', 'stroke-width': 1.3 }), lab(st.px + 2, st.py + 38, q.town, 14, { 'font-style': 'italic' }), lab(bo.px - 10, bo.py - 34, q.lair, 15, { 'font-style': 'italic', 'font-weight': 'bold' }));
   for (const n of S.map) { const d = NODE[n.type], go = opts.includes(n.id), here = n.id === S.pos, r = n.type === 'boss' ? 23 : 17;
-    const g = sv('g', { class: 'node' + (go ? ' go' : ''), transform: `translate(${n.px},${n.py})`, opacity: n.done && !here ? 0.55 : 1, onclick: go ? () => { travel(S, n.id); sel = null; render(); } : null }, sv('title', null, d[1]),
+    const g = sv('g', { class: 'node' + (go ? ' go' : ''), transform: `translate(${n.px},${n.py})`, opacity: n.done && !here ? 0.55 : 1, onclick: go ? () => { travel(S, n.id); sel = null; render(); } : null }, sv('title', null, n.fname ? `${d[1]}: ${n.fname}` : d[1]),
       go ? sv('circle', { class: 'ring', r: r + 6, fill: 'none', stroke: '#c8860d', 'stroke-width': 3.5 }) : null,
       sv('circle', { r, fill: n.done && !here ? '#cdbb90' : '#f3e6c4', stroke: d[0], 'stroke-width': 3.2 }), nodeIcon(n.type),
+      go && n.fname ? lab(0, r + 19, n.fname.length > 30 ? n.fname.slice(0, 28) + '…' : n.fname, 11, { 'font-style': 'italic', style: 'paint-order:stroke', stroke: '#f3e6c4', 'stroke-width': 3 }) : null,
       here ? [ink(`M0,${-r} v-22`, { 'stroke-width': 2 }), ink(`M0,${-r - 22} l15,5 l-15,6 z`, { fill: '#b3261e', stroke: '#6d130d', 'stroke-width': 1.2 })] : null);
     svg.append(g); }
   const box = h('div', { class: 'mapbox' }); box.append(svg);
@@ -162,23 +168,28 @@ function renderMap(main) {
   main.append(h('div', { class: 'card' }, h('h2', null, q.title),
     h('p', null, `${q.name}, ${q.vtitle}, ${q.motive}. Your road runs from ${q.town} through ${q.region} to ${q.lair}.`),
     S.q.mods && S.q.mods.length ? h('p', { class: 'small' }, h('b', { style: 'color:var(--red)' }, 'Contract conditions: '), S.q.mods.map(m => `${MODS[m][0]}: ${MODS[m][1]}`).join(' ')) : null,
+    h('div', { class: 'item', style: 'padding:6px 10px' }, h('b', null, 'Goal: '), actGoal(S), bossOdds(S) > 0 ? h('span', { class: 'rn1' }, ` ${q.name} will start the final fight ${bossOdds(S)}% weaker.`) : bossOdds(S) < 0 ? h('span', { style: 'color:var(--red)' }, ` ${q.name} has been warned and starts ${-bossOdds(S)}% stronger.`) : ''),
     box, h('p', { class: 'row small' }, legend),
+    q.log && q.log.length ? h('details', null, h('summary', { style: 'cursor:pointer' }, `Quest log (${q.log.length})`), q.log.map(e => h('div', { class: 'small', style: e.good ? '' : 'color:#e39a7d' }, e.t))) : null,
     h('p', null, humansIdx().length > 1 ? h('b', null, `${leader().player} (${leader().name}) chooses the road. `) : '', 'Pick one of the ringed stops. The red flag marks where you are.', S.nextMod ? h('span', { class: 'dim' }, ' ' + { ambush: 'You will have the jump on the next enemy.', surprised: 'The next enemy will have the jump on you.', exposed: 'The next enemy starts Exposed.' }[S.nextMod]) : '')));
 }
 
 // ---------- combat ----------
-const mine = u => { const x = S.party[u.hi]; return u.side === 'H' && (x.ctrl === 'human' || x.manual); };
+const mine = u => { if (u.side !== 'H' || u.npc || u.comp) return false; const x = S.party[u.hi]; return x.ctrl === 'human' || x.manual; };
 function unitCard(C, u, targets, onPick, pv) {
   const st = Object.keys(u.states), fx = (C.fx || []).filter(f => f.id === u.id), tgt = targets && targets.includes(u.id);
   return h('div', { class: `unit ${u.side}${u.id === C.cur && !C.over ? ' cur' : ''}${tgt ? ' tgt' : ''}${up(u) ? '' : ' down'}${u.boss ? ' boss' : ''}`, onclick: () => { if (tgt) onPick(u.id); else { inspect = u.id; render(); } } },
-    h('div', { class: 'un' }, u.name), hpBar(u.hp, u.max), h('div', { class: 'small dim' }, up(u) ? `${u.hp}/${u.max}` : u.side === 'H' ? 'down' : 'dead'),
+    h('div', { class: 'un' }, u.name), hpBar(u.hp, u.max), h('div', { class: 'small dim' }, up(u) ? `${u.hp}/${u.max}` : u.side === 'H' ? 'down' : 'dead', u.ar ? ` · ${AR_NAME[u.ar].split(' ')[0]}` : '', u.npc ? ' · protect' : u.comp ? ' · companion' : u.flee ? ' · fleeing' : ''),
+    u.bu ? Object.keys(BU_NAME).filter(k => u.bu[k] > 0).map(k => h('div', { class: 'meter ' + k, title: BU_INFO[k] }, h('i', { style: `width:${Math.min(100, 100 * u.bu[k] / u.cap)}%` }), h('span', null, `${BU_NAME[k]} ${Math.round(100 * u.bu[k] / u.cap)}%`))) : null,
     h('div', null, st.map(s => h('span', { class: `chip ${s}${DEBUFFS.includes(s) ? '' : ' good'}`, title: STATE_INFO[s] }, s + (u.states[s].t > 1 ? ' ' + u.states[s].t : '')))),
-    pv ? h('div', { class: 'pv' + (pv.combo ? ' combo' : '') }, h('b', null, `${Math.round(pv.p * 100)}% hit`), ` · ${pv.lo === pv.hi ? pv.lo : pv.lo + ' to ' + pv.hi} dmg`, pv.g ? h('span', { class: 'dim' }, ` · ${Math.round(pv.g * 100)}% glancing`) : null, pv.tags.length ? h('div', { class: 'dim' }, pv.tags.join(', ')) : null) : null,
-    fx.map(f => h('span', { class: 'pop ' + (f.miss ? 'm' : f.h !== undefined ? 'h' : 'd') }, f.miss ? 'miss' : f.h !== undefined ? '+' + f.h : '-' + f.d + (f.crit ? '!' : f.glance ? ' glancing' : ''))));
+    pv ? h('div', { class: 'pv' }, h('b', null, `${Math.round(pv.p * 100)}% hit`), ` · ${pv.lo === pv.hi ? pv.lo : pv.lo + ' to ' + pv.hi} dmg`, pv.g ? h('span', { class: 'dim' }, ` · ${Math.round(pv.g * 100)}% glancing`) : null, pv.tags.length ? h('div', { class: 'dim' }, pv.tags.join(', ')) : null) : null,
+    fx.map(f => h('span', { class: 'pop ' + (f.miss ? 'm' : f.h !== undefined ? 'h' : 'd') }, f.tag === 'Stagger' ? 'Stagger!' : f.miss ? 'miss' : f.h !== undefined ? '+' + f.h : '-' + f.d + (f.crit ? '!' : f.glance ? ' glancing' : '') + (f.tag ? ' ' + f.tag : ''))));
 }
 function describeUnit(C, u) {
+  if (u.npc) return `${u.name}: keep them alive.`; if (u.comp) return `${u.name}, companion. Fights on their own.`;
   if (u.side === 'H') { const x = S.party[u.hi]; return `${u.name}, ${subName(x)}. ${STATS.map(s => STAT_NAME[s] + ' ' + u.st[s]).join(', ')}; ${u.arm} armour, ${u.ward} ward.`; }
-  return `${u.name} (${FAM[u.fam].n}). Attack ${u.st.might}, Agility ${u.st.agility}, ${u.arm} armour, ${u.ward} ward${u.ether ? ', takes half damage from physical attacks' : ''}. ${FAM[u.fam].weak} Uses: ${u.skills.map(k => SK[k].n).join(', ')}.`;
+  const ar = ARMT[u.ar], els = Object.entries(u.aff).filter(([, v]) => v !== 1).map(([k, v]) => `${EL_NAME[k]} x${v}`), imm = Object.keys(BU_NAME).filter(k => !u.bres[k]).map(k => BU_NAME[k]);
+  return `${u.name} (${FAM[u.fam].n}). ${AR_NAME[u.ar]}: Slash x${ar.slash}, Pierce x${ar.pierce}, Strike x${ar.strike}.${els.length ? ' ' + els.join(', ') + '.' : ''}${imm.length ? ' Immune to ' + imm.join(' and ') + '.' : ''} ${u.arm} armour, ${u.ward} ward, Agility ${u.st.agility}. Meters fill at ${u.cap}. Uses: ${u.skills.map(k => SK[k].n).join(', ')}.`;
 }
 function renderCombat(main) {
   const C = S.C, cur = unit(C, C.cur), myTurn = !C.over && cur && mine(cur);
@@ -189,15 +200,16 @@ function renderCombat(main) {
   const fire = t => { const a = sel.k === 'revive' ? { k: 'revive', t } : { k: sel.k, id: sel.id, t }; sel = null; bagOpen = false; if (act(S, C, a)) render(); else render(); };
   const line = (side, r) => { const us = C.units.filter(u => u.side === side && u.row === r && (side === 'H' || up(u))), rowT = targets && side === 'E' && targets.includes(r);
     return h('div', { class: 'rowline' }, h('div', { class: 'rowlab' + (rowT ? ' tgt' : ''), onclick: rowT ? () => fire(r) : null }, rowT ? 'Hit this row' : (r === 'F' ? 'Front' : 'Back')), us.map(u => unitCard(C, u, targets, fire, pvFor(u)))); };
-  const card = h('div', { class: 'card' }, h('h2', null, C.boss ? `${S.q.name}, ${S.q.vtitle}` : C.elite ? 'A dangerous foe' : 'Battle', h('span', { class: 'dim small' }, `  round ${C.round}`)),
+  const card = h('div', { class: 'card' }, h('h2', null, C.boss ? `${S.q.name}, ${S.q.vtitle}` : C.name || (C.elite ? 'A dangerous foe' : 'Battle'), h('span', { class: 'dim small' }, `  round ${C.round}`)),
+    C.obj ? h('p', { class: 'small', style: 'color:#ffd36b' }, 'Objective: ' + OBJ_TEXT[C.obj.k](C.obj)) : null,
     h('div', { class: 'side' }, line('E', 'B'), line('E', 'F')), h('div', { class: 'log', id: 'log' }, C.log.slice(-40).map(t => h('div', null, t))), h('div', { class: 'side' }, line('H', 'F'), line('H', 'B')));
   const bar = h('div', { class: 'acts' });
   if (C.over) bar.append(h('p', null, h('b', null, C.over === 'win' ? 'Victory. ' : 'The party has fallen. '), h('button', { class: 'primary', onclick: () => { endCombat(S); sel = null; render(); } }, 'Continue')));
   else if (myTurn) {
     const x = S.party[cur.hi], pickA = a => { sel = a; bagOpen = false; render(); };
-    const btn = id => { const sk = SK[id], cd = cur.cds[id], gone = cur.used[id], none = !targetsFor(C, cur, sk).length; const combo = !cd && !gone && !none && sk.pay && targetsFor(C, cur, sk).some(t => resolveTargets(C, cur, sk, t).some(u => sk.pay.s.some(x => has(u, x))));
-      return h('button', { class: (sel && sel.k === 'skill' && sel.id === id ? 'on' : '') + (combo ? ' combo' : ''), disabled: !!cd || !!gone || none, title: skillDesc(sk), onclick: () => pickA({ k: 'skill', id }) }, sk.n, combo ? h('span', { class: 'cd', style: 'color:#ffd36b' }, ' combo') : '', cd ? h('span', { class: 'cd' }, ` (${cd})`) : gone ? h('span', { class: 'cd' }, ' (used)') : ''); };
-    const downed = C.units.some(u => u.side === 'H' && u.down);
+    const btn = id => { const sk = SK[id], cd = cur.cds[id], gone = cur.used[id], none = !targetsFor(C, cur, sk).length;
+      return h('button', { class: sel && sel.k === 'skill' && sel.id === id ? 'on' : '', disabled: !!cd || !!gone || none, title: skillDesc(sk), onclick: () => pickA({ k: 'skill', id }) }, sk.n, cd ? h('span', { class: 'cd' }, ` (${cd})`) : gone ? h('span', { class: 'cd' }, ' (used)') : ''); };
+    const downed = C.units.some(u => u.side === 'H' && u.down && !u.npc && !u.comp);
     bar.append(h('p', null, h('b', null, `${cur.name}'s turn`), x.ctrl === 'human' && humansIdx().length > 1 ? ` (${x.player})` : '', cur.streak ? h('span', { class: 'dim' }, ` · +${cur.streak * 3} to hit after missing`) : ''),
       h('div', { class: 'row' }, btn('attack'), cur.skills.map(btn)),
       h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { onclick: () => { sel = null; act(S, C, { k: 'defend' }); render(); } }, 'Defend'), h('button', { onclick: () => { sel = null; act(S, C, { k: 'move' }); render(); } }, `Move to ${cur.row === 'F' ? 'back' : 'front'} row`),
@@ -207,7 +219,7 @@ function renderCombat(main) {
     if (sel) { const d = sel.k === 'skill' ? skillDesc(SK[sel.id]) : sel.k === 'item' ? CONS[sel.id].d : 'Spend your turn to get a downed ally back on their feet at 20% health.';
       bar.append(h('p', { class: 'small' }, h('b', null, sel.k === 'skill' ? SK[sel.id].n : sel.k === 'item' ? CONS[sel.id].n : 'Help up'), ': ', d, ' ',
         targets && targets[0] === '-' ? h('button', { class: 'primary', onclick: () => fire('-') }, 'Use') : targets && targets.length ? h('span', { class: 'dim' }, 'Choose a glowing target.') : h('span', { class: 'dim' }, 'No valid target.'))); }
-    else bar.append(h('p', { class: 'small dim' }, 'Pick an action, then a glowing target; each target shows your hit chance and damage. Gold-edged skills would land a combo right now. Click any combatant or state to inspect it.'));
+    else bar.append(h('p', { class: 'small dim' }, 'Pick an action, then a glowing target; each target shows your hit chance, damage, multipliers and meter buildup. Click any combatant to see its armour, weaknesses and meters.'));
   } else bar.append(h('p', { class: 'dim' }, cur ? `${cur.name} is acting…` : ''));
   if (inspect) { const u = unit(C, inspect); if (u) bar.append(h('p', { class: 'small', style: 'border-top:1px solid var(--line);padding-top:6px' }, describeUnit(C, u), ' ', Object.keys(u.states).map(s => `${s}: ${STATE_INFO[s]}`).join(' '))); }
   card.append(bar); main.append(card);
@@ -255,7 +267,7 @@ function renderEvent(main) {
 
 // ---------- loot, shop, rest ----------
 function renderLoot(main) {
-  main.append(h('div', { class: 'card' }, h('h2', null, 'Spoils'), h('p', null, `The party gains ${S.loot.gold} gold and ${S.loot.xp} experience. Take one of these. Gear you swap out goes into the shared pack.`),
+  main.append(h('div', { class: 'card' }, h('h2', null, 'Spoils'), (S.loot.notes || []).map(t => h('p', { style: 'color:#ffd36b' }, t)), h('p', null, `The party gains ${S.loot.gold} gold and ${S.loot.xp} experience. Take one of these. Gear you swap out goes into the shared pack.`),
     h('div', { class: 'grid3' }, S.loot.items.map((it, k) => itemCard(it, giveButtons(it, i => { takeLoot(S, k, i); render(); })))),
     h('p', null, h('button', { onclick: () => { takeLoot(S, -1); render(); } }, 'Leave them and take 10 gold instead'))));
 }
@@ -326,11 +338,14 @@ function renderEnd(main) {
 }
 function rules() {
   modal(h('h2', null, 'How it works'),
-    h('p', null, h('b', null, 'The road. '), 'Each adventure has three acts. Choose a route across the map: fights, encounters, merchants and camps. Act three ends at the villain\'s lair.'),
+    h('p', null, h('b', null, 'The map. '), 'Each adventure has three acts: pick up the trail, break the villain\'s strength, storm the lair. Choose a route across the map: fights, encounters, merchants and camps.'),
     h('p', null, h('b', null, 'Rows. '), 'Melee attacks can only reach the enemy front row while anyone stands in it, and can only be made from your own front row (spears reach from the back). Ranged attacks and spells reach anyone.'),
     h('p', null, h('b', null, 'Attacks. '), 'Roll a d20 plus your attack stat against 9 + the target\'s Agility (+ shield). A 20 is a critical hit. A roll that misses by 4 or less is a glancing blow for half damage, with no states applied. Each full miss gives that hero +3 to hit on their next attack, up to +9, until they land one. Armour is subtracted from physical damage, ward from spell damage. Selecting an attack shows your hit chance and damage on every target.'),
     h('p', null, h('b', null, 'Stats. '), 'Every stat helps every hero. Might: +2 health per point, and melee attack and damage. Agility: defence and turn order, plus attack with bows, daggers and rapiers. Mind: one step wider critical range per 4 points, and spell attack and damage. Spirit: 3% per point to resist harmful states from enemies and +3% healing received, plus holy attacks and heal strength. Items "of Power" always raise the wearer\'s main stat. Click a hero for the exact numbers.'),
-    h('p', null, h('b', null, 'Combos. '), 'Many skills apply a state, and other skills deal far more against a target in that state. Build the party so one hero sets up what another cashes in.'),
+    h('p', null, h('b', null, 'Damage types. '), 'Weapons and physical skills deal Slash (swords, axes), Pierce (daggers, spears, bows) or Strike (maces, hammers, staves). Each enemy wears Cloth, Hide, Mail, Plate, Bone or Spirit, which takes more or less from each: Strike cracks bone and plate, Pierce finds the gaps in mail, Slash cuts cloth and hide. Spells are Fire, Frost, Lightning, Holy or Arcane, and each family of enemies has its own weaknesses. Click an enemy to see them.'),
+    h('p', null, h('b', null, 'Meters. '), Object.values(BU_INFO).join(' '), ' Slashing weapons build Bleed, striking weapons build Stagger, and some skills and poisons build Poison. Meters drain a little each turn, and elites and bosses take longer to fill.'),
+    h('p', null, h('b', null, 'Elements and reactions. '), 'Fire leaves a target Burning, Frost leaves it Chilled, Lightning leaves it Charged. A different element on top causes a reaction: ', Object.entries(REACT_INFO).map(([k, v]) => `${k}: ${v}`).join(' ')),
+    h('p', null, h('b', null, 'The road. '), 'Every fight is part of the story: each has a name, and many have an objective (stop the messenger, protect the villagers, hold the breach, win quickly). Completing objectives gives leads on the villain\'s lieutenant, or weakens the villain for the final fight. The map shows the goal of the current act and keeps a quest log. Some encounters bring a companion, a fifth fighter who stays for a while.'),
     DEBUFFS.concat(['Guard', 'Taunt', 'Blessed', 'Hidden']).map(s => h('div', { class: 'small' }, h('span', { class: 'chip ' + s + (DEBUFFS.includes(s) ? '' : ' good') }, s), ' ', STATE_INFO[s])),
     h('p', null, h('b', null, 'Going down. '), 'A hero at zero health is down and takes a wound (12% less maximum health) until healed at a camp or merchant. Allies can help them up mid-fight. If everyone is down, the adventure ends.'),
     h('p', null, h('b', null, 'Gear. '), 'A border colour shows rarity: ', RAR.map((n, k) => h('b', { class: 'rn' + k }, n + ' ')), '. Weapons, armour and off-hand items gain a step for each magical property. Set pieces grant bonuses when one hero wears two or three from the same set. Swapped-out gear goes to the shared pack, where any hero who can use it may take it. Merchants also keep a smith who can improve, enchant and reforge what you wear.'),
