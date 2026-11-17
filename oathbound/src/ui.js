@@ -52,7 +52,7 @@ function renderSetup(main) {
   main.append(h('div', { class: 'card' }, h('h2', null, 'Gather your party'),
     h('p', null, 'A co-op fantasy adventure for one to four heroes. Each run is a freshly generated three-act quest: a villain, a motive, a twist, and a branching road to the lair. Human players share this screen and take turns; AI allies fill the other seats.'),
     h('h3', null, 'Saved games'), saves.map((x, i) => h('div', { class: 'item', style: 'padding:6px 10px' }, h('div', { class: 'row' }, h('b', null, `Slot ${i + 1}`), x && x.S.v === VER ? h('span', null, slotLabel(x), h('span', { class: 'dim small' }, ` · ${x.S.q.title} · saved ${new Date(x.at).toLocaleString()}`)) : x ? h('span', { class: 'dim' }, 'A save from an older version, which cannot be loaded.') : h('span', { class: 'dim' }, 'Empty')),
-      h('div', { class: 'row', style: 'margin-top:4px' }, x && x.S.v === VER ? h('button', { class: 'primary small', onclick: () => { slot = i; S = x.S; render(); } }, 'Continue') : null, x && x.S.v === VER ? h('button', { class: 'small', onclick: () => exportSave(i) }, 'Export') : null,
+      h('div', { class: 'row', style: 'margin-top:4px' }, x && x.S.v === VER ? h('button', { class: 'primary small', onclick: () => { slot = i; S = migrate(x.S); render(); } }, 'Continue') : null, x && x.S.v === VER ? h('button', { class: 'small', onclick: () => exportSave(i) }, 'Export') : null,
         h('button', { class: 'small', onclick: () => importSave(i) }, 'Import'), x ? h('button', { class: 'small', onclick: () => modal(h('h2', null, `Delete slot ${i + 1}?`), h('p', null, 'This cannot be undone. Export it first if you might want it back.'), h('p', { class: 'row' }, h('button', { class: 'primary', onclick: () => { store.put(i, null); closeModal(); render(); } }, 'Delete'), h('button', { onclick: closeModal }, 'Keep it'))) }, 'Delete') : null,
         h('label', { class: 'small' }, h('input', { type: 'radio', name: 'slot', checked: slot === i, onchange: () => { slot = i; render(); } }), ' start the new game here')))),
     h('h3', null, 'New game'),
@@ -77,11 +77,17 @@ function renderParty() {
     h('p', null, h('button', { onclick: openPack }, `Gear and pack (${S.stash.length})`)),
     h('p', { class: 'small dim' }, 'Click a hero for stats, gear and skills.')));
 }
+function statText(x, u, st) { const c = CLASSES[x.cls], w = WT[x.gear.w.type];
+  if (st === 'might') return `+${K.mightHp * u.st.might} health for everyone${c.grow[0] === 'might' || ['warrior', 'priest'].includes(x.cls) && x.sub === 'warpriest' ? '; melee attack and damage' : w.fin ? '' : '; melee attack and damage'}.`;
+  if (st === 'agility') return `defence (enemies need 9 + this to hit you) and turn order${w.fin || w.ranged ? '; also your attack and damage with this weapon' : ''}.`;
+  if (st === 'mind') return `crits on ${20 - Math.floor(u.st.mind / K.mindCrit) - (u.fx.crit || 0)}+ (one step per ${K.mindCrit} Mind)${x.cls === 'mage' ? '; spell attack and damage' : ''}.`;
+  return `resists ${Math.round(u.st.spirit * K.spiritResist * 100)}% of harmful states from enemies, and healing received is +${Math.round(u.st.spirit * K.spiritHeal * 100)}%${x.cls === 'priest' ? '; holy attacks and heal strength' : ''}.`; }
 function sheet(i) {
   const x = S.party[i], g = x.gear, free = S.screen !== 'combat', u = heroUnit(x, i);
   const toggle = id => { const eq = x.eq.includes(id) ? x.eq.filter(k => k !== id) : [...x.eq, id]; if (eq.length <= 4) { setEq(S, i, eq); sheet(i); render(); } };
   modal(h('h2', null, `${x.name}, level ${x.level} ${subName(x)}`),
-    h('p', { class: 'small' }, STATS.map(s => `${STAT_NAME[s]} ${u.st[s]}`).join(' · '), ` · ${u.arm} armour · ${u.ward} ward`),
+    h('h3', null, 'Stats'), STATS.map(st => h('div', { class: 'small' }, h('b', null, `${STAT_NAME[st]} ${u.st[st]}`), CLASSES[x.cls].grow[0] === st ? h('span', { class: 'dim' }, ' (main stat)') : '', ': ', statText(x, u, st))),
+    h('p', { class: 'small' }, `${u.arm} armour (subtracted from physical hits), ${u.ward} ward (subtracted from spells), ${u.defb ? `+${u.defb} defence, ` : ''}${u.max} health.`),
     h('h3', null, 'Gear'), [g.w, g.off, g.a, g.t1, g.t2].filter(Boolean).map(it => h('div', { class: 'small' }, h('b', { class: 'rn' + it.r }, it.n), ': ', itemDesc(it))),
     activeSets(x).map(t => h('div', { class: 'small rn4' }, t)),
     talentsOf(x).length ? [h('h3', null, 'Talents'), talentsOf(x).map(t => h('div', { class: 'small' }, h('b', null, t[0]), ': ', fxText(t[1]), '.'))] : null,
@@ -161,12 +167,13 @@ function renderMap(main) {
 
 // ---------- combat ----------
 const mine = u => { const x = S.party[u.hi]; return u.side === 'H' && (x.ctrl === 'human' || x.manual); };
-function unitCard(C, u, targets, onPick) {
-  const st = Object.keys(u.states).filter(s => s !== 'Steady' || true), fx = (C.fx || []).filter(f => f.id === u.id), tgt = targets && targets.includes(u.id);
+function unitCard(C, u, targets, onPick, pv) {
+  const st = Object.keys(u.states), fx = (C.fx || []).filter(f => f.id === u.id), tgt = targets && targets.includes(u.id);
   return h('div', { class: `unit ${u.side}${u.id === C.cur && !C.over ? ' cur' : ''}${tgt ? ' tgt' : ''}${up(u) ? '' : ' down'}${u.boss ? ' boss' : ''}`, onclick: () => { if (tgt) onPick(u.id); else { inspect = u.id; render(); } } },
     h('div', { class: 'un' }, u.name), hpBar(u.hp, u.max), h('div', { class: 'small dim' }, up(u) ? `${u.hp}/${u.max}` : u.side === 'H' ? 'down' : 'dead'),
     h('div', null, st.map(s => h('span', { class: `chip ${s}${DEBUFFS.includes(s) ? '' : ' good'}`, title: STATE_INFO[s] }, s + (u.states[s].t > 1 ? ' ' + u.states[s].t : '')))),
-    fx.map(f => h('span', { class: 'pop ' + (f.miss ? 'm' : f.h !== undefined ? 'h' : 'd') }, f.miss ? 'miss' : f.h !== undefined ? '+' + f.h : '-' + f.d + (f.crit ? '!' : ''))));
+    pv ? h('div', { class: 'pv' + (pv.combo ? ' combo' : '') }, h('b', null, `${Math.round(pv.p * 100)}% hit`), ` · ${pv.lo === pv.hi ? pv.lo : pv.lo + ' to ' + pv.hi} dmg`, pv.g ? h('span', { class: 'dim' }, ` · ${Math.round(pv.g * 100)}% glancing`) : null, pv.tags.length ? h('div', { class: 'dim' }, pv.tags.join(', ')) : null) : null,
+    fx.map(f => h('span', { class: 'pop ' + (f.miss ? 'm' : f.h !== undefined ? 'h' : 'd') }, f.miss ? 'miss' : f.h !== undefined ? '+' + f.h : '-' + f.d + (f.crit ? '!' : f.glance ? ' glancing' : ''))));
 }
 function describeUnit(C, u) {
   if (u.side === 'H') { const x = S.party[u.hi]; return `${u.name}, ${subName(x)}. ${STATS.map(s => STAT_NAME[s] + ' ' + u.st[s]).join(', ')}; ${u.arm} armour, ${u.ward} ward.`; }
@@ -176,18 +183,21 @@ function renderCombat(main) {
   const C = S.C, cur = unit(C, C.cur), myTurn = !C.over && cur && mine(cur);
   let targets = null, selSk = null;
   if (myTurn && sel) { selSk = sel.k === 'item' ? { ...CONS[sel.id], ty: 'ranged' } : sel.k === 'revive' ? { tg: 'downed' } : SK[sel.id]; targets = targetsFor(C, cur, selSk); }
+  // preview the selected attack on every enemy it could hit
+  const atk = selSk && (selSk.m || selSk.flat !== undefined) && targets && targets.length, pvFor = u => { if (!atk || u.side === cur.side || !up(u)) return null; const ok = targets.includes(u.id) || targets.includes(u.row) || (targets[0] === '-' && selSk.tg === 'all'); return ok ? preview(C, cur, selSk.id === 'attack' || SK[selSk.id] ? selSk : selSk, u) : null; };
   const fire = t => { const a = sel.k === 'revive' ? { k: 'revive', t } : { k: sel.k, id: sel.id, t }; sel = null; bagOpen = false; if (act(S, C, a)) render(); else render(); };
   const line = (side, r) => { const us = C.units.filter(u => u.side === side && u.row === r && (side === 'H' || up(u))), rowT = targets && side === 'E' && targets.includes(r);
-    return h('div', { class: 'rowline' }, h('div', { class: 'rowlab' + (rowT ? ' tgt' : ''), onclick: rowT ? () => fire(r) : null }, rowT ? 'Hit this row' : (r === 'F' ? 'Front' : 'Back')), us.map(u => unitCard(C, u, targets, fire))); };
+    return h('div', { class: 'rowline' }, h('div', { class: 'rowlab' + (rowT ? ' tgt' : ''), onclick: rowT ? () => fire(r) : null }, rowT ? 'Hit this row' : (r === 'F' ? 'Front' : 'Back')), us.map(u => unitCard(C, u, targets, fire, pvFor(u)))); };
   const card = h('div', { class: 'card' }, h('h2', null, C.boss ? `${S.q.name}, ${S.q.vtitle}` : C.elite ? 'A dangerous foe' : 'Battle', h('span', { class: 'dim small' }, `  round ${C.round}`)),
     h('div', { class: 'side' }, line('E', 'B'), line('E', 'F')), h('div', { class: 'log', id: 'log' }, C.log.slice(-40).map(t => h('div', null, t))), h('div', { class: 'side' }, line('H', 'F'), line('H', 'B')));
   const bar = h('div', { class: 'acts' });
   if (C.over) bar.append(h('p', null, h('b', null, C.over === 'win' ? 'Victory. ' : 'The party has fallen. '), h('button', { class: 'primary', onclick: () => { endCombat(S); sel = null; render(); } }, 'Continue')));
   else if (myTurn) {
     const x = S.party[cur.hi], pickA = a => { sel = a; bagOpen = false; render(); };
-    const btn = id => { const sk = SK[id], cd = cur.cds[id], gone = cur.used[id], none = !targetsFor(C, cur, sk).length; return h('button', { class: sel && sel.k === 'skill' && sel.id === id ? 'on' : '', disabled: !!cd || !!gone || none, title: skillDesc(sk), onclick: () => pickA({ k: 'skill', id }) }, sk.n, cd ? h('span', { class: 'cd' }, ` (${cd})`) : gone ? h('span', { class: 'cd' }, ' (used)') : ''); };
+    const btn = id => { const sk = SK[id], cd = cur.cds[id], gone = cur.used[id], none = !targetsFor(C, cur, sk).length; const combo = !cd && !gone && !none && sk.pay && targetsFor(C, cur, sk).some(t => resolveTargets(C, cur, sk, t).some(u => sk.pay.s.some(x => has(u, x))));
+      return h('button', { class: (sel && sel.k === 'skill' && sel.id === id ? 'on' : '') + (combo ? ' combo' : ''), disabled: !!cd || !!gone || none, title: skillDesc(sk), onclick: () => pickA({ k: 'skill', id }) }, sk.n, combo ? h('span', { class: 'cd', style: 'color:#ffd36b' }, ' combo') : '', cd ? h('span', { class: 'cd' }, ` (${cd})`) : gone ? h('span', { class: 'cd' }, ' (used)') : ''); };
     const downed = C.units.some(u => u.side === 'H' && u.down);
-    bar.append(h('p', null, h('b', null, `${cur.name}'s turn`), x.ctrl === 'human' && humansIdx().length > 1 ? ` (${x.player})` : '', has(cur, 'Prone') ? h('span', { class: 'dim' }, ' · Prone: half damage this turn') : ''),
+    bar.append(h('p', null, h('b', null, `${cur.name}'s turn`), x.ctrl === 'human' && humansIdx().length > 1 ? ` (${x.player})` : '', cur.streak ? h('span', { class: 'dim' }, ` · +${cur.streak * 3} to hit after missing`) : ''),
       h('div', { class: 'row' }, btn('attack'), cur.skills.map(btn)),
       h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { onclick: () => { sel = null; act(S, C, { k: 'defend' }); render(); } }, 'Defend'), h('button', { onclick: () => { sel = null; act(S, C, { k: 'move' }); render(); } }, `Move to ${cur.row === 'F' ? 'back' : 'front'} row`),
         downed ? h('button', { class: sel && sel.k === 'revive' ? 'on' : '', onclick: () => pickA({ k: 'revive' }) }, 'Help an ally up') : null,
@@ -196,7 +206,7 @@ function renderCombat(main) {
     if (sel) { const d = sel.k === 'skill' ? skillDesc(SK[sel.id]) : sel.k === 'item' ? CONS[sel.id].d : 'Spend your turn to get a downed ally back on their feet at 20% health.';
       bar.append(h('p', { class: 'small' }, h('b', null, sel.k === 'skill' ? SK[sel.id].n : sel.k === 'item' ? CONS[sel.id].n : 'Help up'), ': ', d, ' ',
         targets && targets[0] === '-' ? h('button', { class: 'primary', onclick: () => fire('-') }, 'Use') : targets && targets.length ? h('span', { class: 'dim' }, 'Choose a glowing target.') : h('span', { class: 'dim' }, 'No valid target.'))); }
-    else bar.append(h('p', { class: 'small dim' }, 'Pick an action, then a glowing target. Hover or select a skill to read it. Click any combatant to inspect it.'));
+    else bar.append(h('p', { class: 'small dim' }, 'Pick an action, then a glowing target; each target shows your hit chance and damage. Gold-edged skills would land a combo right now. Click any combatant or state to inspect it.'));
   } else bar.append(h('p', { class: 'dim' }, cur ? `${cur.name} is acting…` : ''));
   if (inspect) { const u = unit(C, inspect); if (u) bar.append(h('p', { class: 'small', style: 'border-top:1px solid var(--line);padding-top:6px' }, describeUnit(C, u), ' ', Object.keys(u.states).map(s => `${s}: ${STATE_INFO[s]}`).join(' '))); }
   card.append(bar); main.append(card);
@@ -315,7 +325,8 @@ function rules() {
   modal(h('h2', null, 'How it works'),
     h('p', null, h('b', null, 'The road. '), 'Each adventure has three acts. Choose a route across the map: fights, encounters, merchants and camps. Act three ends at the villain\'s lair.'),
     h('p', null, h('b', null, 'Rows. '), 'Melee attacks can only reach the enemy front row while anyone stands in it, and can only be made from your own front row (spears reach from the back). Ranged attacks and spells reach anyone.'),
-    h('p', null, h('b', null, 'Attacks. '), 'Roll a d20 plus your attack stat against 9 + the target\'s Agility (+ shield). A 20 is a critical hit. Armour is subtracted from physical damage, ward from spell damage.'),
+    h('p', null, h('b', null, 'Attacks. '), 'Roll a d20 plus your attack stat against 9 + the target\'s Agility (+ shield). A 20 is a critical hit. A roll that misses by 4 or less is a glancing blow for half damage, with no states applied. Each full miss gives that hero +3 to hit on their next attack, up to +9, until they land one. Armour is subtracted from physical damage, ward from spell damage. Selecting an attack shows your hit chance and damage on every target.'),
+    h('p', null, h('b', null, 'Stats. '), 'Every stat helps every hero. Might: +2 health per point, and melee attack and damage. Agility: defence and turn order, plus attack with bows, daggers and rapiers. Mind: one step wider critical range per 4 points, and spell attack and damage. Spirit: 3% per point to resist harmful states from enemies and +3% healing received, plus holy attacks and heal strength. Items "of Power" always raise the wearer\'s main stat. Click a hero for the exact numbers.'),
     h('p', null, h('b', null, 'Combos. '), 'Many skills apply a state, and other skills deal far more against a target in that state. Build the party so one hero sets up what another cashes in.'),
     DEBUFFS.concat(['Guard', 'Taunt', 'Blessed', 'Hidden']).map(s => h('div', { class: 'small' }, h('span', { class: 'chip ' + s + (DEBUFFS.includes(s) ? '' : ' good') }, s), ' ', STATE_INFO[s])),
     h('p', null, h('b', null, 'Going down. '), 'A hero at zero health is down and takes a wound (12% less maximum health) until healed at a camp or merchant. Allies can help them up mid-fight. If everyone is down, the adventure ends.'),
