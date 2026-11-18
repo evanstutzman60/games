@@ -4,7 +4,7 @@ const ri = (S, n) => Math.floor(rnd(S) * n), pick = (S, a) => a[ri(S, a.length)]
 function shuffle(S, a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = ri(S, i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const STATS = ['might', 'agility', 'mind', 'spirit'], STAT_NAME = { might: 'Might', agility: 'Agility', mind: 'Mind', spirit: 'Spirit' };
-const K = { easeN: 7, easeVet: 3, easeAtk: 1.2, easeHp: 0.25, glance: 4, mindCrit: 4, mightHp: 2, spiritResist: 0.03, spiritHeal: 0.03, focus: 0.7, campLv: [-0.32, 1.25, 4.05, 5.9, 7.3], vetLv: [0.05, 1.6, 2.5, 4.3, 2.6], conLv: 3.6, rankLv: 1.0, hp: 2.2, atk: 3.05, heroHeal: 0.15, vetHp: 1.15, vetAtk: 0.5, vetHeal: 0.12 };   // global difficulty knobs, set by simulation
+const K = { nodeXp: 6, lateLv: 0.4, vetLate: 0.25, easeN: 7, easeVet: 3, easeAtk: 1.2, easeHp: 0.25, glance: 4, mindCrit: 4, mightHp: 2, spiritResist: 0.03, spiritHeal: 0.03, focus: 0.7, campLv: [-0.32, 0.95, 3.7, 5.9, 7.3], vetLv: [0.05, 1.9, 2.85, 4.3, 2.6], conLv: 3.6, rankLv: 1.0, hp: 2.2, atk: 3.05, heroHeal: 0.15, vetHp: 1.15, vetAtk: 0.5, vetHeal: 0.12 };   // global difficulty knobs, set by simulation
 
 // States. Tactical states come from specific skills; elemental auras come from Fire, Frost and Lightning hits;
 // Poisoned comes from the Poison meter (or enemy venom). Bleed and Stagger are meters that trigger instantly.
@@ -18,7 +18,7 @@ const STATE_INFO = {
   Poisoned: 'Takes poison damage at the start of each turn.',
   Oiled: 'Doused in oil: the next fire hit Ignites it for +50% damage and long-lasting flames.',
   Guard: 'Takes half damage.', Taunt: 'Enemies must attack this target if they can.',
-  Blessed: '+2 to hit and +20% damage.', Hidden: 'Cannot be singled out; the next attack is a critical hit.',
+  Blessed: '+2 to hit and +20% damage.', Hidden: 'Enemies cannot target you, and attacks that hit a whole row or everyone deal half damage to you. Your next attack is a critical hit and ends it.',
   Steady: 'Recovering its footing: cannot be stunned.'
 };
 const DEBUFFS = ['Marked', 'Exposed', 'Stunned', 'Frozen', 'Burning', 'Numbed', 'Poisoned', 'Oiled'];
@@ -52,6 +52,9 @@ const SK = {
   ambush: { n: 'Ambush', ty: 'melee', tg: 'one', m: 1.4, pay: { s: ['Marked'], m: 1.8 }, cd: 2, w: 9 },
   garrote: { n: 'Garrote', ty: 'melee', tg: 'one', m: 0.9, dt: 'slash', bu: { poison: 40, bleed: 40 }, cd: 3, w: 7 },
   deathmark: { n: 'Death Mark', ty: 'melee', tg: 'one', m: 1.2, pay: { s: ['Marked', 'Stunned', 'Frozen', 'Exposed'], m: 2.2 }, cd: 4, w: 9 },
+  snipe: { n: 'Snipe', ty: 'ranged', tg: 'one', m: 0.9, dt: 'pierce', pay: { s: ['Marked', 'Stunned', 'Frozen'], m: 1.8 }, cd: 1, w: 8 },
+  venomarrow: { n: 'Venom Arrow', ty: 'ranged', tg: 'one', m: 0.7, dt: 'pierce', bu: { poison: 60 }, cd: 2, w: 6 },
+  crippling: { n: 'Crippling Shot', ty: 'ranged', tg: 'one', m: 0.8, dt: 'pierce', ap: [['Exposed', 2, 1]], cd: 2, w: 7 },
   aimed: { n: 'Aimed Shot', ty: 'ranged', tg: 'one', m: 1.5, dt: 'pierce', pay: { s: ['Marked'], m: 1.7 }, cd: 2, w: 9 },
   volley: { n: 'Volley', ty: 'ranged', tg: 'row', m: 0.8, dt: 'pierce', ap: [['Marked', 2, 0.5]], cd: 2, w: 8 },
   pinning: { n: 'Barbed Shot', ty: 'ranged', tg: 'one', m: 1.1, dt: 'pierce', bu: { bleed: 55 }, cd: 3, w: 8 },
@@ -213,7 +216,7 @@ for (const k in CONS) CONS[k].id = k;
 // rarity: gear gains one step per affix; trinkets by their tier; set pieces have their own
 const RAR = ['Common', 'Uncommon', 'Rare', 'Epic', 'Set', 'Relic'], PROC_T = { Burning: 3, Exposed: 2, Marked: 3, Numbed: 2 };
 const AFFIX = {
-  flaming: { n: 'Flaming', on: 'w', pre: 1, fx: { procs: [['Burning', 0.25]] } }, hunters: { n: 'Heavy', on: 'w', pre: 1, fx: { bu: { stagger: 15 } } }, serrated: { n: 'Serrated', on: 'w', pre: 1, fx: { bu: { bleed: 15 } } }, venomous: { n: 'Venomous', on: 'w', pre: 1, fx: { bu: { poison: 15 } } }, frosted: { n: 'Frostbitten', on: 'w', pre: 1, fx: { procs: [['Numbed', 0.25]] } }, sundering: { n: 'Sundering', on: 'w', pre: 1, fx: { procs: [['Exposed', 0.2]] } },
+  flaming: { n: 'Flaming', on: 'w', pre: 1, fx: { procs: [['Burning', 0.25]] } }, hunters: { n: 'Heavy', on: 'w', pre: 1, fx: { bu: { stagger: 15 } } }, serrated: { n: 'Serrated', on: 'w', pre: 1, fx: { bu: { bleed: 15 } } }, venomous: { n: 'Venomous', on: 'w', pre: 1, fx: { bu: { poison: 25 } } }, frosted: { n: 'Frostbitten', on: 'w', pre: 1, fx: { procs: [['Numbed', 0.25]] } }, sundering: { n: 'Sundering', on: 'w', pre: 1, fx: { procs: [['Exposed', 0.2]] } },
   keen: { n: 'Keen', on: 'w', pre: 1, fx: { crit: 1 } }, balanced: { n: 'Balanced', on: 'w', pre: 1, fx: { hit: 1 } }, vampiric: { n: 'Vampiric', on: 'w', pre: 1, fx: { leech: 0.1 } }, swift: { n: 'Swift', on: 'w', pre: 1, fx: { init: 3 } },
   sturdy: { n: 'Sturdy', on: 'a', pre: 1, fx: { arm: 1 } }, warded: { n: 'Warded', on: 'a', pre: 1, fx: { ward: 2 } }, spiked: { n: 'Spiked', on: 'a', pre: 1, fx: { thorns: 2 } }, stalwart: { n: 'Stalwart', on: 'a', pre: 1, fx: { hp: 8 } }, mending: { n: 'Mending', on: 'a', pre: 1, fx: { regen: 1 } },
   power: { n: 'Power', fx: { primary: 1 } }, power2: { n: 'Power', fx: { primary: 1 } }, might: { n: 'Might', fx: { might: 1 } }, agility: { n: 'Agility', fx: { agility: 1 } }, mind: { n: 'Mind', fx: { mind: 1 } }, spirit: { n: 'Spirit', fx: { spirit: 1 } }, vigor: { n: 'Vigor', fx: { hp: 6 } }, duelist: { n: 'the Duelist', fx: { pay: 0.15 } }, lingering: { n: 'Lingering', fx: { dur: 1 } }
@@ -308,7 +311,9 @@ function heroFx(h) { const fx = {}, sets = {}; for (const g of Object.values(h.g
 function heroStat(h, s) { const c = CLASSES[h.cls], L = h.level - 1, fx = heroFx(h);
   return c.st[STATS.indexOf(s)] + (c.grow[0] === s ? L : c.grow[1] === s ? L >> 1 : 0) + (fx[s] || 0) + (c.grow[0] === s ? fx.primary || 0 : 0) - (s === 'agility' && h.gear.a && ARMOR[h.gear.a.type].slow ? 1 : 0); }
 function maxHp(h) { const c = CLASSES[h.cls]; return Math.max(1, Math.round((c.hp + c.hpl * (h.level - 1) + (heroFx(h).hp || 0) + K.mightHp * heroStat(h, 'might')) * (1 - 0.12 * h.wounds))); }
-function known(h) { const c = CLASSES[h.cls], out = c.base.slice(0, h.level >= 2 ? 5 : 4); if (h.sub) out.push(...c.subs[h.sub].sk.slice(0, h.level - 2)); return out; }
+// a Ranger fights from the back row, so the rogue's knife work becomes arrow work
+const RANGER_SWAP = { backstab: 'snipe', hamstring: 'venomarrow', dirty: 'crippling' }, swapSk = (h, id) => h.sub === 'ranger' && RANGER_SWAP[id] || id;
+function known(h) { const c = CLASSES[h.cls], out = c.base.slice(0, h.level >= 2 ? 5 : 4).map(id => swapSk(h, id)); if (h.sub) out.push(...c.subs[h.sub].sk.slice(0, h.level - 2)); return out; }
 function autoEquip(h) { h.eq = known(h).slice().sort((a, b) => SK[b].w - SK[a].w).slice(0, 4); }
 function newHero(seat, i) { const c = CLASSES[seat.cls];
   const h = { name: seat.name || c.n, cls: seat.cls, sub: null, ctrl: seat.ctrl, player: seat.player || '', level: 1, wounds: 0, row: c.row, hp: 0, eq: [], tal: [],
@@ -364,13 +369,13 @@ const EN = {
   runner: { n: 'Messenger', fam: 'bandit', ar: 'cloth', hp: 7, atk: 2, agi: 2, arm: 0, ward: 0, die: 4, row: 'B', sk: ['e_shot'], story: true },
   // bosses
   banditking: { n: 'Bandit King', fam: 'bandit', ar: 'mail', hp: 90, atk: 6, agi: 4, arm: 2, ward: 1, die: 10, row: 'F', sk: ['e_hit', 'e_cleave', 'e_crush', 'e_rally', 'e_callthugs'], boss: true },
-  necro: { n: 'Necromancer', fam: 'undead', ar: 'cloth', bres: { bleed: 0.6, poison: 0.6 }, hp: 72, atk: 6, agi: 3, arm: 0, ward: 3, die: 9, row: 'B', sk: ['e_drain', 'e_curse', 'e_deathbolt', 'e_raise'], boss: true },
+  necro: { n: 'Necromancer', fam: 'undead', ar: 'cloth', bres: { bleed: 0.6, poison: 0.6 }, hp: 64, atk: 6, agi: 3, arm: 0, ward: 3, die: 9, row: 'B', sk: ['e_drain', 'e_curse', 'e_deathbolt', 'e_raise'], boss: true },
   knight: { n: 'Hollow Knight', fam: 'undead', ar: 'plate', hp: 100, atk: 6, agi: 2, arm: 4, ward: 1, die: 10, row: 'F', sk: ['e_hit', 'e_crush', 'e_cleave', 'e_curse'], boss: true },
   beastlord: { n: 'Beastlord', fam: 'beast', ar: 'hide', hp: 85, atk: 6, agi: 4, arm: 1, ward: 1, die: 10, row: 'F', sk: ['e_hit', 'e_maul', 'e_roar', 'e_callwolves'], boss: true },
   prophet: { n: 'Prophet', fam: 'cult', ar: 'cloth', hp: 72, atk: 6, agi: 3, arm: 0, ward: 3, die: 9, row: 'B', sk: ['e_fire', 'e_firewave', 'e_heal', 'e_callimps'], boss: true },
   arch1: { n: 'The Regent', fam: 'cult', ar: 'plate', hp: 95, atk: 6, agi: 4, arm: 2, ward: 2, die: 10, row: 'F', sk: ['e_hit', 'e_crush', 'e_curse', 'e_rally', 'e_callimps'], boss: true, next: 'arch2' },
   arch2: { n: 'The Regent Unbound', fam: 'cult', ar: 'spirit', aff: { fire: 0.5, holy: 1.5 }, hp: 100, atk: 7, agi: 4, arm: 1, ward: 4, die: 11, row: 'F', sk: ['e_deathbolt', 'e_breath', 'e_drain', 'e_raise', 'e_tail'], boss: true },
-  wyrm: { n: 'Wyrm', fam: 'cult', ar: 'plate', aff: { fire: 0.25, frost: 1.5, holy: 1 }, hp: 110, atk: 6, agi: 3, arm: 3, ward: 2, die: 10, row: 'F', sk: ['e_hit', 'e_breath', 'e_tail'], boss: true }
+  wyrm: { n: 'Wyrm', fam: 'cult', ar: 'plate', aff: { fire: 0.25, frost: 1.5, holy: 1 }, hp: 96, atk: 6, agi: 3, arm: 3, ward: 2, die: 10, row: 'F', sk: ['e_hit', 'e_breath', 'e_tail'], boss: true }
 };
 const affOf = e => ({ ...FAM[e.fam].aff, ...(e.aff || {}) }), bresOf = e => ({ bleed: 1, poison: 1, stagger: 1, ...FAM[e.fam].bres, ...(e.bres || {}) });
 // the first few fights of a run ramp up to full strength, so a new party can find its feet
@@ -435,7 +440,7 @@ function damage(att, sk, t, roll, crit) {
   for (const [vs, v] of att.fx.vs || []) if (has(t, vs)) m *= 1 + v;
   if (crit) m *= att.w.assassin ? 2 : 1.5;
   const armour = sk.flat !== undefined || has(t, 'Exposed') ? 0 : Math.max(0, (kd.phys ? t.arm : kd.el === 'arcane' ? Math.floor(t.ward / 2) : t.ward) - (att.fx.pen || 0));
-  let d = Math.max(1, Math.round(base * m) - armour); if (has(t, 'Guard')) d = Math.max(1, Math.round(d / 2)); if (t.fx.dr) d = Math.max(1, Math.round(d * (1 - t.fx.dr)));
+  let d = Math.max(1, Math.round(base * m) - armour); if (has(t, 'Guard')) d = Math.max(1, Math.round(d / 2)); if (has(t, 'Hidden') && (sk.tg === 'row' || sk.tg === 'all')) d = Math.max(1, Math.round(d / 2)); if (t.fx.dr) d = Math.max(1, Math.round(d * (1 - t.fx.dr)));
   return { d, payoff, rx };
 }
 // meter buildup a hit would add: the skill's own, the weapon's for physical hits, and gear
@@ -468,7 +473,7 @@ function targetsFor(C, att, sk) {
   const ff = frontOf(C, other(att.side)), pool = melee && ff.length ? ff : foes;
   if (sk.tg === 'all') return ['-'];
   if (sk.tg === 'row') return melee ? [pool[0].row] : ['F', 'B'].filter(r => foes.some(u => u.row === r));
-  let c = pool.filter(u => !has(u, 'Hidden')); if (!c.length) c = pool;
+  let c = pool.filter(u => !has(u, 'Hidden')); if (!c.length) c = foes.filter(u => !has(u, 'Hidden') && (!melee || att.w.reach || att.row === 'F')); if (!c.length) c = pool;
   const tn = c.filter(u => has(u, 'Taunt')); return (tn.length ? tn : c).map(u => u.id);
 }
 function resolveTargets(C, att, sk, t) {
@@ -550,7 +555,11 @@ function tick(u) { for (const s of Object.keys(u.states)) { const st = u.states[
 function endTurn(S, C, u) { tick(u); checkOver(S, C); if (!C.over) nextUp(S, C); }
 function checkOver(S, C) { if (!living(C, 'E').length) C.over = 'win'; else if (!living(C, 'H').filter(u => !u.npc).length) C.over = 'lose'; else if (C.obj && C.obj.k === 'hold' && C.round > C.obj.rounds) { C.over = 'win'; for (const u of living(C, 'E')) u.hp = 0; } }
 function newRound(S, C) {
-  C.round++; C.order = C.units.filter(up).map(u => [u.id, u.st.agility + die(S, 6) + (u.fx.init || 0) + (C.first === u.side ? 20 : 0)]).sort((a, b) => b[1] - a[1]).map(x => x[0]); C.oi = -1; C.focus = {}; if (C.round > 1) C.first = null;
+  // the next round's order is rolled a round ahead, so players can plan around it
+  const roll = (us, first) => us.map(u => [u.id, u.st.agility + die(S, 6) + (u.fx.init || 0) + (first === u.side ? 20 : 0)]).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+  C.round++; const live = C.units.filter(up), pre = (C.nextOrder || []).filter(id => live.some(u => u.id === id));
+  C.order = C.nextOrder ? pre.concat(roll(live.filter(u => !pre.includes(u.id)), null)) : roll(live, C.first); C.oi = -1; C.focus = {}; if (C.round > 1) C.first = null;
+  C.nextOrder = roll(live, null);
   objRound(S, C);
 }
 // advance to the next unit that actually gets to act
@@ -560,7 +569,7 @@ function nextUp(S, C) {
     const u = unit(C, C.order[C.oi]); if (!u || !up(u)) continue; C.cur = u.id;
     for (const s of DOT) if (has(u, s)) { const d = Math.max(1, Math.round(u.states[s].pow * (s === 'Burning' && u.aff && u.aff.fire ? u.aff.fire : 1))); say(C, `${u.name} ${s === 'Burning' ? 'burns' : 'suffers poison'} for ${d}.`); C.fx.push({ id: u.id, d }); hurt(S, C, u, d); }
     checkOver(S, C); if (!up(u)) continue;
-    if (u.bu) for (const k of Object.keys(u.bu)) u.bu[k] = Math.max(0, u.bu[k] - 8);
+    if (u.bu && u.bu.stagger) u.bu.stagger = Math.max(0, u.bu.stagger - 8);
     if (u.fx.regen) heal(C, u, u.fx.regen);
     if (helpless(u)) { say(C, `${u.name} is ${has(u, 'Frozen') ? 'frozen solid' : 'stunned'} and loses the turn.`); delete u.states.Stunned; delete u.states.Frozen; u.states.Steady = { t: u.boss ? 3 : u.elite ? 2 : 1, fresh: true }; tick(u); continue; }
     return;
@@ -1210,7 +1219,7 @@ function genMap(S) {
 function options(S) { return S.pos < 0 ? [0] : S.map[S.pos].next; }
 function encounter(S, kind) {
   const node = S.map[S.pos], act = node.act, n = S.party.length, prog = S.map.filter(m => m.act === act && m.x < node.x && m.lane === 1).length / 14, P = pw(S),
-    lv = S.camp ? 0.875 * (1 + (Math.min(5, S.camp.ch) - 1) * 1.9 + (act - 1) * 0.95 + prog * 2) + 0.125 + (S.camp.ch <= 5 ? K.campLv[S.camp.ch - 1] + (S.diff ? K.vetLv[S.camp.ch - 1] : 0) : K.campLv[4] + (S.diff ? K.vetLv[4] : 0) + K.conLv + K.rankLv * ((S.q.rank || 1) - 1)) : act * 1.5 - 0.5 + prog;
+    lv = S.camp ? 0.875 * (1 + (Math.min(5, S.camp.ch) - 1) * 1.9 + (act - 1) * 0.95 + prog * 2) + 0.125 + (S.camp.ch <= 5 ? K.campLv[S.camp.ch - 1] + (S.diff ? K.vetLv[S.camp.ch - 1] : 0) : K.campLv[4] + (S.diff ? K.vetLv[4] : 0) + K.conLv + K.rankLv * ((S.q.rank || 1) - 1)) : act * 1.5 - 0.5 + prog + K.lateLv * (act - 1) + (S.diff ? K.vetLate * (act - 1) : 0);
   const fam = kind === 'boss' || node.lt || rnd(S) < 0.7 ? S.q.fam : pick(S, ['beast', 'bandit']);
   const pool = Object.keys(EN).filter(k => EN[k].fam === fam && !EN[k].elite && !EN[k].boss && (EN[k].act || 1) <= P), list = [];
   const more = hasMod(S, 'swarm') ? 1 : 0, ft = kind === 'normal' ? fightOf(S, node) : null;
@@ -1231,12 +1240,12 @@ function travel(S, id) {
   else if (n.type === 'shop') openShop(S); else S.screen = 'rest';
   return true;
 }
-const XP_AT = [0, 16, 38, 64, 96], CAMP_XP = [0, 22, 56, 106, 162, 224, 291, 364, 442, 526];
+const XP_AT = [0, 15, 35, 60, 88], CAMP_XP = [0, 22, 56, 106, 162, 224, 291, 364, 442, 526];
 const xpAt = (S, lv) => (S.camp ? CAMP_XP : XP_AT)[lv];
 const lvlDue = S => { const lv = S.party[0].level; return lv < maxLevel(S) && S.xp >= xpAt(S, lv); };
 function afterNode(S) { if (S.camp && S.pos >= 0 && S.map[S.pos].type === 'boss' && S.map[S.pos].done) chapterEnd(S, true); else S.screen = 'map'; }
 function finishNode(S) {
-  S.map[S.pos].done = true; S.shop = null; S.leader++;
+  S.map[S.pos].done = true; S.shop = null; S.leader++; if (!S.camp && !['fight', 'elite', 'boss'].includes(S.map[S.pos].type)) S.xp += K.nodeXp;
   if (lvlDue(S)) { levelUp(S); return; }
   afterNode(S);
 }
@@ -1254,7 +1263,7 @@ const SUBWP = { guardian: 'sword', berserker: 'axe', assassin: 'dagger', ranger:
 const pathWeapon = (h, sub) => { const w = h.gear.w, t = SUBWP[sub]; return !w || w.type === t || w.set || w.uq || (sub === 'ranger' && w.type === 'crossbow') ? null : finish({ k: 'weapon', type: t, tier: w.tier, afx: (w.afx || []).filter(a => AFFIX[a].on !== 'a') }); };
 function subGear(h, sub, S, take) { const nw = take === false ? null : pathWeapon(h, sub);
   if (nw) { if (S) { S.stash.push(h.gear.w); note(S, nw); } h.gear.w = nw; if (WT[nw.type].two && h.gear.off) { if (S) S.stash.push(h.gear.off); h.gear.off = null; } }
-  if (sub === 'ranger') h.row = 'B'; if (sub === 'flamekeeper') h.row = 'F'; if (sub === 'lightbringer') h.row = 'B'; h.hp = Math.min(h.hp, maxHp(h)); }
+  if (sub === 'ranger') { h.row = 'B'; h.eq = h.eq.map(id => swapSk(h, id)); } if (sub === 'flamekeeper') h.row = 'F'; if (sub === 'lightbringer') h.row = 'B'; h.hp = Math.min(h.hp, maxHp(h)); }
 function pickTalent(S, hi, c) { if (!S.lvl || !S.lvl.needT[hi] || !setTalent(S, hi, S.lvl.level - 6, c)) return false; S.lvl.needT[hi] = false; return true; }
 function closeLevel(S) { if (!S.lvl || S.lvl.need.some(Boolean) || S.lvl.needT.some(Boolean)) return false; S.lvl = null; if (lvlDue(S)) levelUp(S); else afterNode(S); return true; }
 function setEq(S, hi, ids) { const h = S.party[hi], k = known(h); if (ids.length > 4 || ids.some(x => !k.includes(x)) || new Set(ids).size !== ids.length) return false; h.eq = ids.slice(); return true; }
@@ -1264,7 +1273,7 @@ const ARCH = [{ name: 'Vharos', title: 'the Pale Regent', sigil: 'a crowned skul
 const TRAIN = { talent: 15, sub: 80 };
 // older saves: rebuild every item from the current tables, so renamed or changed effects apply
 function migrate(S) { const fix = it => { if (!it || it.k === 'cons') return; if (it.k === 'trinket' && it.ti >= 0 && !it.set && !it.uq && TRINKETS[it.ti]) { it.n = TRINKETS[it.ti][0]; it.fx = JSON.parse(JSON.stringify(TRINKETS[it.ti][1])); } finish(it); };
-  for (const h of S.party) { Object.values(h.gear).forEach(fix); h.eq = h.eq.filter(id => known(h).includes(id)); h.hp = Math.min(h.hp, maxHp(h)); } (S.stash || []).forEach(fix); if (S.shop) S.shop.items.forEach(fix); if (S.loot) S.loot.items.forEach(fix); if (S.ev && S.ev.result) S.ev.result.items.forEach(fix);
+  for (const h of S.party) { Object.values(h.gear).forEach(fix); h.eq = h.eq.map(id => swapSk(h, id)).filter(id => known(h).includes(id)); h.hp = Math.min(h.hp, maxHp(h)); } (S.stash || []).forEach(fix); if (S.shop) S.shop.items.forEach(fix); if (S.loot) S.loot.items.forEach(fix); if (S.ev && S.ev.result) S.ev.result.items.forEach(fix);
   for (const h of S.party) { if (h.sub === 'pyromancer') h.sub = 'cryomancer'; if (h.sub === 'warpriest') h.sub = 'flamekeeper'; }
   S.v = 6; S.comp = S.comp || null; if (S.q) { S.q.log = S.q.log || []; S.q.leads = S.q.leads || 0; } if (S.camp && S.camp.board) for (const b of S.camp.board) { b.log = b.log || []; b.leads = b.leads || 0; }
   for (const b of S.bag || []) if (!CONS[b.id]) b.qty = 0; S.bag = (S.bag || []).filter(b => b.qty > 0); if (S.camp) refreshBonus(S); return S; }

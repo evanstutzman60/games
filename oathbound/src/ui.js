@@ -191,6 +191,13 @@ function describeUnit(C, u) {
   const ar = ARMT[u.ar], els = Object.entries(u.aff).filter(([, v]) => v !== 1).map(([k, v]) => `${EL_NAME[k]} x${v}`), imm = Object.keys(BU_NAME).filter(k => !u.bres[k]).map(k => BU_NAME[k]);
   return `${u.name} (${FAM[u.fam].n}). ${AR_NAME[u.ar]}: Slash x${ar.slash}, Pierce x${ar.pierce}, Strike x${ar.strike}.${els.length ? ' ' + els.join(', ') + '.' : ''}${imm.length ? ' Immune to ' + imm.join(' and ') + '.' : ''} ${u.arm} armour, ${u.ward} ward, Agility ${u.st.agility}. Meters fill at ${u.cap}. Uses: ${u.skills.map(k => SK[k].n).join(', ')}.`;
 }
+// who acts when: the rest of this round, then the whole of the next one (rolled a round ahead)
+function orderStrip(C) {
+  const chip = (id, now, early) => { const u = unit(C, id); if (!u || !up(u)) return null; const skip = early && helpless(u);
+    return h('span', { class: 'to ' + (u.side === 'H' ? 'toh' : 'toe') + (now ? ' tonow' : '') + (skip ? ' toskip' : '') + (inspect === id ? ' tosel' : ''), title: skip ? `${u.name} is ${has(u, 'Frozen') ? 'Frozen' : 'Stunned'} and will lose this turn` : `${u.name}: Agility ${u.st.agility}`, onclick: () => { inspect = id; render(); } }, now ? '▶ ' : '', u.name, skip ? ' (skips)' : ''); };
+  const restIds = C.order.slice(Math.max(0, C.oi)), rest = restIds.map((id, k) => chip(id, k === 0 && id === C.cur, !(k === 0 && id === C.cur))).filter(Boolean), next = (C.nextOrder || []).map(id => chip(id, false, !restIds.includes(id))).filter(Boolean);
+  return h('div', { class: 'torder', title: 'Turn order is Agility plus a d6, rolled a round ahead.' }, h('span', { class: 'tolab' }, 'Turn order'), rest, next.length ? h('span', { class: 'tolab' }, `Round ${C.round + 1}`) : null, next);
+}
 function renderCombat(main) {
   const C = S.C, cur = unit(C, C.cur), myTurn = !C.over && cur && mine(cur);
   let targets = null, selSk = null;
@@ -202,6 +209,7 @@ function renderCombat(main) {
     return h('div', { class: 'rowline' }, h('div', { class: 'rowlab' + (rowT ? ' tgt' : ''), onclick: rowT ? () => fire(r) : null }, rowT ? 'Hit this row' : (r === 'F' ? 'Front' : 'Back')), us.map(u => unitCard(C, u, targets, fire, pvFor(u)))); };
   const card = h('div', { class: 'card' }, h('h2', null, C.boss ? `${S.q.name}, ${S.q.vtitle}` : C.name || (C.elite ? 'A dangerous foe' : 'Battle'), h('span', { class: 'dim small' }, `  round ${C.round}`)),
     C.obj ? h('p', { class: 'small', style: 'color:#ffd36b' }, 'Objective: ' + OBJ_TEXT[C.obj.k](C.obj)) : null,
+    C.over ? null : orderStrip(C),
     h('div', { class: 'side' }, line('E', 'B'), line('E', 'F')), h('div', { class: 'log', id: 'log' }, C.log.slice(-40).map(t => h('div', null, t))), h('div', { class: 'side' }, line('H', 'F'), line('H', 'B')));
   const bar = h('div', { class: 'acts' });
   if (C.over) bar.append(h('p', null, h('b', null, C.over === 'win' ? 'Victory. ' : 'The party has fallen. '), h('button', { class: 'primary', onclick: () => { endCombat(S); sel = null; render(); } }, 'Continue')));
@@ -343,7 +351,7 @@ function rules() {
     h('p', null, h('b', null, 'Attacks. '), 'Roll a d20 plus your attack stat against 9 + the target\'s Agility (+ shield). A 20 is a critical hit. A roll that misses by 4 or less is a glancing blow for half damage, with no states applied. Each full miss gives that hero +3 to hit on their next attack, up to +9, until they land one. Armour is subtracted from physical damage, ward from spell damage. Selecting an attack shows your hit chance and damage on every target.'),
     h('p', null, h('b', null, 'Stats. '), 'Every stat helps every hero. Might: +2 health per point, and melee attack and damage. Agility: defence and turn order, plus attack with bows, daggers and rapiers. Mind: one step wider critical range per 4 points, and spell attack and damage. Spirit: 3% per point to resist harmful states from enemies and +3% healing received, plus holy attacks and heal strength. Items "of Power" always raise the wearer\'s main stat. Click a hero for the exact numbers.'),
     h('p', null, h('b', null, 'Damage types. '), 'Weapons and physical skills deal Slash (swords, axes), Pierce (daggers, spears, bows) or Strike (maces, hammers, staves). Each enemy wears Cloth, Hide, Mail, Plate, Bone or Spirit, which takes more or less from each: Strike cracks bone and plate, Pierce finds the gaps in mail, Slash cuts cloth and hide. Spells are Fire, Frost, Lightning, Holy or Arcane, and each family of enemies has its own weaknesses. Click an enemy to see them.'),
-    h('p', null, h('b', null, 'Meters. '), Object.values(BU_INFO).join(' '), ' Slashing weapons build Bleed, striking weapons build Stagger, and some skills and poisons build Poison. Meters drain a little each turn, and elites and bosses take longer to fill.'),
+    h('p', null, h('b', null, 'Meters. '), Object.values(BU_INFO).join(' '), ' Slashing weapons build Bleed, striking weapons build Stagger, and some skills and poisons build Poison. Bleed and Poison stay until they fill; Stagger recovers a little each turn. Elites and bosses take longer to fill.'),
     h('p', null, h('b', null, 'Elements. '), 'Fire (Flamekeeper) sets enemies Burning: damage every turn. Frost (Cryomancer) Numbs them: their attacks are at -3 to hit and deal 25% less, and more frost freezes them solid for a turn. Lightning (Stormcaller) builds Stagger, which stuns. Holy heals your most wounded ally for part of the damage, and undead and cultists fear it. Arcane never misses and ignores half of ward.'),
     h('p', null, h('b', null, 'Reactions. '), Object.entries(REACT_INFO).map(([k, v]) => `${k}: ${v}`).join(' ')),
     h('p', null, h('b', null, 'The road. '), 'Every fight is part of the story: each has a name, and many have an objective (stop the messenger, protect the villagers, hold the breach, win quickly). Completing objectives gives leads on the villain\'s lieutenant, or weakens the villain for the final fight. The map shows the goal of the current act and keeps a quest log. Some encounters bring a companion, a fifth fighter who stays for a while.'),
