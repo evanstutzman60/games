@@ -45,7 +45,7 @@
   .acts button { min-width: 96px; }
   .meter { position: relative; height: 12px; background: #111; border-radius: 3px; margin-top: 3px; font-size: 10px; } .meter i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; } .meter span { position: relative; padding-left: 4px; color: #fff; }
   .meter.bleed i { background: #9c2b2b; } .meter.poison i { background: #4f7f2a; } .meter.stagger i { background: #a8862a; }
-  .chip.Marked { background: #6a2540; } .chip.Chilled { background: #2a5a7a; } .chip.Charged { background: #5a4a8a; } .chip.Poisoned { background: #3f5f22; } .chip.Oiled { background: #4a3a1a; }
+  .chip.Marked { background: #6a2540; } .chip.Numbed { background: #2a5a7a; } .chip.Frozen { background: #3a7aa8; } .chip.Poisoned { background: #3f5f22; } .chip.Oiled { background: #4a3a1a; }
   .pv { margin-top: 4px; padding: 3px 5px; border-radius: 4px; background: #1c2a1a; font-size: 12px; } .acts .cd { color: var(--dim); font-size: 12px; }
   .choice { display: block; width: 100%; text-align: left; margin: 6px 0; padding: 10px 12px; } .choice small { display: block; color: var(--dim); }
   .item { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; background: var(--panel2); } .item.sold { opacity: 0.4; } .item b { color: var(--gold); }
@@ -70,7 +70,7 @@ const ri = (S, n) => Math.floor(rnd(S) * n), pick = (S, a) => a[ri(S, a.length)]
 function shuffle(S, a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = ri(S, i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const STATS = ['might', 'agility', 'mind', 'spirit'], STAT_NAME = { might: 'Might', agility: 'Agility', mind: 'Mind', spirit: 'Spirit' };
-const K = { glance: 4, mindCrit: 4, mightHp: 2, spiritResist: 0.03, spiritHeal: 0.03, focus: 0.7, campLv: [-0.32, 1.0, 3.05, 4.8, 6.25], vetLv: [0.15, 0.75, 1.5, 2.3, 1.8], conLv: 2.5, rankLv: 1.0, hp: 1.82, atk: 2.35, heroHeal: 0.15, vetHp: 1.15, vetAtk: 0.5, vetHeal: 0.12 };   // global difficulty knobs, set by simulation
+const K = { glance: 4, mindCrit: 4, mightHp: 2, spiritResist: 0.03, spiritHeal: 0.03, focus: 0.7, campLv: [-0.32, 1.65, 4.65, 6.7, 8.1], vetLv: [-0.1, 1.2, 2.0, 3.7, 1.7], conLv: 3.6, rankLv: 1.0, hp: 2.12, atk: 2.95, heroHeal: 0.15, vetHp: 1.15, vetAtk: 0.5, vetHeal: 0.12 };   // global difficulty knobs, set by simulation
 
 // States. Tactical states come from specific skills; elemental auras come from Fire, Frost and Lightning hits;
 // Poisoned comes from the Poison meter (or enemy venom). Bleed and Stagger are meters that trigger instantly.
@@ -78,17 +78,17 @@ const STATE_INFO = {
   Marked: 'Singled out: every attack against it gets +3 to hit. Precision skills (Backstab, Aimed Shot, Ambush, Arcane Missile) deal extra damage to it. Marked bandits panic and take +25% damage.',
   Exposed: 'Guard broken: its armour and ward count as zero, and physical hits deal +20%.',
   Stunned: 'Dazed: loses its next turn, and attacks against it get +4 to hit. Executions and backstabs hit it far harder. Cannot be stunned again straight away.',
-  Burning: 'On fire: takes fire damage at the start of each turn. A fire aura: frost on it causes Melt, lightning causes Overload, holy causes Purify.',
-  Chilled: 'Frozen stiff: attacks against it get +2 to hit and it acts later. A frost aura: fire on it causes Melt, lightning causes Shatter, holy causes Purify.',
-  Charged: 'Crackling with lightning. A lightning aura: fire on it causes Overload, frost causes Shatter, holy causes Purify.',
+  Burning: 'On fire: takes fire damage at the start of each of its turns.',
+  Numbed: 'Frostbitten: its attacks are at -3 to hit and deal 25% less. More frost on a Numbed enemy freezes it solid.',
+  Frozen: 'Frozen solid: loses its next turn, and attacks against it get +4 to hit. Executions and backstabs hit it far harder.',
   Poisoned: 'Takes poison damage at the start of each turn.',
   Oiled: 'Doused in oil: the next fire hit Ignites it for +50% damage and long-lasting flames.',
   Guard: 'Takes half damage.', Taunt: 'Enemies must attack this target if they can.',
   Blessed: '+2 to hit and +20% damage.', Hidden: 'Cannot be singled out; the next attack is a critical hit.',
   Steady: 'Recovering its footing: cannot be stunned.'
 };
-const DEBUFFS = ['Marked', 'Exposed', 'Stunned', 'Burning', 'Chilled', 'Charged', 'Poisoned', 'Oiled'];
-const REACT_INFO = { Melt: 'Fire meets frost: double damage.', Shatter: 'Frost meets lightning: +30% damage and the target is Exposed.', Overload: 'Fire meets lightning: the blast also hits the rest of its row for 60%.', Purify: 'Holy meets any aura: +50% damage, and the party is healed for part of it.', Ignite: 'Fire on an Oiled target: +50% damage and Burning for 5 turns.' };
+const DEBUFFS = ['Marked', 'Exposed', 'Stunned', 'Frozen', 'Burning', 'Numbed', 'Poisoned', 'Oiled'];
+const REACT_INFO = { Melt: 'Fire on a Numbed or Frozen enemy, or frost on a Burning one: double damage, and the frost or fire is used up.', Overload: 'Lightning on a Burning enemy: the flames explode, hitting the rest of its row for 60%.', Shatter: 'Lightning on a Numbed or Frozen enemy: +30% damage, and its armour breaks (Exposed).', Ignite: 'Fire on an Oiled enemy: +50% damage and Burning for 5 turns.' };
 const BU_INFO = { bleed: 'Bleed: when the meter fills, the wound opens for 15% of its maximum health (less for elites and bosses). Undead do not bleed.', poison: 'Poison: when the meter fills, it is Poisoned for 3 turns. Undead are immune.', stagger: 'Stagger: when the meter fills, its posture breaks and it is Stunned.' };
 
 // ---------- skills ----------
@@ -101,39 +101,39 @@ const SK = {
   bash: { n: 'Bash', ty: 'melee', tg: 'one', m: 0.7, dt: 'strike', bu: { stagger: 55 }, cd: 2, w: 7 },
   sunder: { n: 'Sunder', ty: 'melee', tg: 'one', m: 1, ap: [['Exposed', 2, 1]], cd: 2, w: 7 },
   taunt: { n: 'Taunt', ty: 'buff', tg: 'self', buff: [['Taunt', 2], ['Guard', 1]], cd: 3, w: 5 },
-  trip: { n: 'Rend', ty: 'melee', tg: 'one', m: 0.9, dt: 'slash', bu: { bleed: 55 }, cd: 2, w: 6 },
-  cleave: { n: 'Cleave', ty: 'melee', tg: 'row', m: 0.7, dt: 'slash', bu: { bleed: 25 }, cd: 2, w: 6 },
+  trip: { n: 'Overhead Chop', ty: 'melee', tg: 'one', m: 1.3, bu: { stagger: 20 }, cd: 2, w: 7 },
+  cleave: { n: 'Cleave', ty: 'melee', tg: 'row', m: 0.7, cd: 2, w: 6 },
   bulwark: { n: 'Bulwark', ty: 'buff', tg: 'allies', buff: [['Guard', 1]], cd: 4, w: 7 },
   slam: { n: 'Shield Slam', ty: 'melee', tg: 'one', m: 1.1, dt: 'strike', bu: { stagger: 45 }, pay: { s: ['Exposed'], m: 1.5 }, cd: 2, w: 8 },
   laststand: { n: 'Last Stand', ty: 'heal', tg: 'self', healP: 0.4, buff: [['Taunt', 2], ['Guard', 2]], once: true, w: 8 },
-  reckless: { n: 'Reckless Swing', ty: 'melee', tg: 'one', m: 1.8, bu: { bleed: 35 }, selfAp: ['Exposed', 2], cd: 1, w: 8 },
-  execute: { n: 'Execute', ty: 'melee', tg: 'one', m: 1, pay: { s: ['Stunned', 'low'], m: 2.3 }, cd: 2, w: 8 },
-  whirl: { n: 'Whirlwind', ty: 'melee', tg: 'row', m: 1.15, dt: 'slash', bu: { bleed: 35 }, cd: 3, w: 9 },
+  reckless: { n: 'Reckless Swing', ty: 'melee', tg: 'one', m: 1.8, bu: { stagger: 30 }, selfAp: ['Exposed', 2], cd: 1, w: 8 },
+  execute: { n: 'Execute', ty: 'melee', tg: 'one', m: 1, pay: { s: ['Stunned', 'Frozen', 'low'], m: 2.3 }, cd: 2, w: 8 },
+  whirl: { n: 'Whirlwind', ty: 'melee', tg: 'row', m: 1.15, bu: { stagger: 25 }, cd: 3, w: 9 },
   // Rogue: the knife. Marks, poisons and finishes.
   knife: { n: 'Throwing Knife', ty: 'ranged', tg: 'one', m: 0.5, dt: 'pierce', ap: [['Marked', 3, 1]], cd: 1, w: 7 },
-  backstab: { n: 'Backstab', ty: 'melee', tg: 'one', m: 1, pay: { s: ['Marked', 'Stunned'], m: 1.8 }, cd: 1, w: 8 },
+  backstab: { n: 'Backstab', ty: 'melee', tg: 'one', m: 1, pay: { s: ['Marked', 'Stunned', 'Frozen'], m: 1.8 }, cd: 1, w: 8 },
   smoke: { n: 'Smoke Bomb', ty: 'buff', tg: 'self', buff: [['Hidden', 2]], cd: 3, w: 3 },
   hamstring: { n: 'Envenom', ty: 'melee', tg: 'one', m: 0.7, dt: 'pierce', bu: { poison: 55 }, cd: 2, w: 6 },
-  dirty: { n: 'Dirty Trick', ty: 'melee', tg: 'one', m: 0.5, bu: { stagger: 50 }, cd: 2, w: 6 },
+  dirty: { n: 'Lacerate', ty: 'melee', tg: 'one', m: 0.8, dt: 'slash', bu: { bleed: 65 }, cd: 2, w: 7 },
   ambush: { n: 'Ambush', ty: 'melee', tg: 'one', m: 1.4, pay: { s: ['Marked'], m: 1.8 }, cd: 2, w: 9 },
-  garrote: { n: 'Garrote', ty: 'melee', tg: 'one', m: 0.9, dt: 'pierce', bu: { poison: 40, stagger: 35 }, cd: 3, w: 7 },
-  deathmark: { n: 'Death Mark', ty: 'melee', tg: 'one', m: 1.2, pay: { s: ['Marked', 'Stunned', 'Exposed'], m: 2.2 }, cd: 4, w: 9 },
+  garrote: { n: 'Garrote', ty: 'melee', tg: 'one', m: 0.9, dt: 'slash', bu: { poison: 40, bleed: 40 }, cd: 3, w: 7 },
+  deathmark: { n: 'Death Mark', ty: 'melee', tg: 'one', m: 1.2, pay: { s: ['Marked', 'Stunned', 'Frozen', 'Exposed'], m: 2.2 }, cd: 4, w: 9 },
   aimed: { n: 'Aimed Shot', ty: 'ranged', tg: 'one', m: 1.5, dt: 'pierce', pay: { s: ['Marked'], m: 1.7 }, cd: 2, w: 9 },
   volley: { n: 'Volley', ty: 'ranged', tg: 'row', m: 0.8, dt: 'pierce', ap: [['Marked', 2, 0.5]], cd: 2, w: 8 },
-  pinning: { n: 'Pinning Shot', ty: 'ranged', tg: 'one', m: 1.1, dt: 'pierce', bu: { stagger: 50 }, cd: 3, w: 8 },
-  // Mage: the elements. Fire, frost and lightning react with each other.
-  firebolt: { n: 'Firebolt', ty: 'spell', tg: 'one', m: 1, el: 'fire', cd: 1, w: 7 },
+  pinning: { n: 'Barbed Shot', ty: 'ranged', tg: 'one', m: 1.1, dt: 'pierce', bu: { bleed: 55 }, cd: 3, w: 8 },
+  // Mage: blue magic. Frost numbs and freezes, lightning staggers, arcane never misses.
+  firebolt: { n: 'Arcane Bolt', ty: 'spell', tg: 'one', m: 1, cd: 1, w: 7 },
   frost: { n: 'Frost Shard', ty: 'spell', tg: 'one', m: 0.9, el: 'frost', cd: 1, w: 7 },
-  missile: { n: 'Arcane Missile', ty: 'spell', tg: 'one', m: 0.85, sure: true, pay: { s: ['Marked'], m: 1.5 }, w: 5 },
+  missile: { n: 'Arcane Missiles', ty: 'spell', tg: 'row', m: 0.55, pay: { s: ['Marked'], m: 1.5 }, cd: 2, w: 5 },
   gust: { n: 'Spark', ty: 'spell', tg: 'one', m: 0.8, el: 'lightning', cd: 1, w: 7 },
   weaken: { n: 'Frost Nova', ty: 'spell', tg: 'row', m: 0.5, el: 'frost', cd: 3, w: 6 },
-  detonate: { n: 'Detonate', ty: 'spell', tg: 'one', m: 1, el: 'fire', pay: { s: ['Burning'], m: 2, consume: true }, cd: 1, w: 9 },
-  flamewave: { n: 'Flame Wave', ty: 'spell', tg: 'row', m: 0.8, el: 'fire', cd: 2, w: 8 },
-  inferno: { n: 'Inferno', ty: 'spell', tg: 'all', m: 1, el: 'fire', cd: 5, w: 9 },
-  chain: { n: 'Chain Lightning', ty: 'spell', tg: 'row', m: 0.9, el: 'lightning', cd: 2, w: 9 },
+  detonate: { n: 'Ice Lance', ty: 'spell', tg: 'one', m: 1.2, el: 'frost', pay: { s: ['Frozen'], m: 1.8 }, cd: 1, w: 9 },
+  flamewave: { n: 'Deep Freeze', ty: 'spell', tg: 'one', m: 0.7, el: 'frost', freeze: true, cd: 4, w: 8 },
+  inferno: { n: 'Blizzard', ty: 'spell', tg: 'all', m: 0.7, el: 'frost', cd: 4, w: 9 },
+  chain: { n: 'Chain Lightning', ty: 'spell', tg: 'row', m: 0.9, el: 'lightning', bu: { stagger: 10 }, cd: 2, w: 9 },
   thunder: { n: 'Thunderclap', ty: 'spell', tg: 'all', m: 0.5, el: 'lightning', bu: { stagger: 35 }, cd: 4, w: 8 },
   tempest: { n: 'Tempest', ty: 'spell', tg: 'one', m: 1.7, el: 'lightning', bu: { stagger: 50 }, cd: 4, w: 9 },
-  // Priest: the light. Heals, and holy damage that purifies any aura.
+  // Priest: the light and the flame. Holy hits heal the party; the Flamekeeper burns.
   mend: { n: 'Mend', ty: 'heal', tg: 'ally', heal: 1, cd: 1, w: 10 },
   smite: { n: 'Smite', ty: 'spell', tg: 'one', m: 1, el: 'holy', w: 6 },
   bless: { n: 'Bless', ty: 'buff', tg: 'ally', buff: [['Blessed', 3]], cd: 2, w: 4 },
@@ -142,16 +142,16 @@ const SK = {
   radiance: { n: 'Radiance', ty: 'heal', tg: 'allies', heal: 0.8, cd: 3, w: 9 },
   purify: { n: 'Purify', ty: 'heal', tg: 'ally', heal: 0.8, cleanse: true, buff: [['Guard', 1]], cd: 2, w: 7 },
   sunburst: { n: 'Sunburst', ty: 'spell', tg: 'all', m: 0.9, el: 'holy', cd: 4, w: 9 },
-  crushing: { n: 'Crushing Blow', ty: 'melee', tg: 'one', m: 1.4, dt: 'strike', bu: { stagger: 40 }, ap: [['Exposed', 2, 1]], cd: 2, w: 8 },
-  judgement: { n: 'Judgement', ty: 'melee', tg: 'one', m: 1.1, el: 'holy', pay: { s: ['Stunned', 'Exposed'], m: 1.6 }, cd: 3, w: 8 },
-  holyfire: { n: 'Holy Fire', ty: 'melee', tg: 'one', m: 1.4, el: 'holy', ap: [['Burning', 3, 1]], leech: 1.0, cd: 3, w: 9 },
+  crushing: { n: 'Searing Strike', ty: 'melee', tg: 'one', m: 1.3, el: 'fire', cd: 2, w: 8 },
+  judgement: { n: 'Pyre', ty: 'spell', tg: 'row', m: 0.8, el: 'fire', cd: 3, w: 8 },
+  holyfire: { n: 'Holy Fire', ty: 'melee', tg: 'one', m: 1.5, el: 'fire', pay: { s: ['Burning'], m: 1.5 }, leech: 1.1, cd: 3, w: 9 },
   // enemies
   e_hit: { n: 'Strike', ty: 'melee', tg: 'one', m: 1 },
   e_shot: { n: 'Shot', ty: 'ranged', tg: 'one', m: 1 },
   e_bolt: { n: 'Dark Bolt', ty: 'spell', tg: 'one', m: 1 },
   e_trip: { n: 'Hamstring', ty: 'melee', tg: 'one', m: 0.8, ap: [['Exposed', 2, 0.6]], cd: 2 },
   e_mark: { n: 'Pick a Target', ty: 'ranged', tg: 'one', m: 0.7, ap: [['Marked', 2, 1]], cd: 2 },
-  e_fire: { n: 'Firebrand', ty: 'spell', tg: 'one', m: 0.9, ap: [['Burning', 2, 1]], cd: 1 },
+  e_fire: { n: 'Firebrand', ty: 'spell', tg: 'one', m: 0.9, ap: [['Burning', 2, 1]], cd: 2 },
   e_bite: { n: 'Paralysing Bite', ty: 'melee', tg: 'one', m: 0.8, ap: [['Stunned', 1, 0.35]], cd: 3 },
   e_venom: { n: 'Venom Spit', ty: 'ranged', tg: 'one', m: 0.6, ap: [['Poisoned', 3, 0.8]], cd: 2 },
   e_web: { n: 'Web', ty: 'ranged', tg: 'one', m: 0.5, ap: [['Stunned', 1, 0.4]], cd: 3 },
@@ -168,8 +168,8 @@ const SK = {
   e_deathbolt: { n: 'Death Bolt', ty: 'spell', tg: 'one', m: 1.5, cd: 2 },
   e_breath: { n: 'Fire Breath', ty: 'spell', tg: 'all', m: 0.7, ap: [['Burning', 2, 1]], cd: 3 },
   e_tail: { n: 'Tail Sweep', ty: 'melee', tg: 'row', m: 0.8, ap: [['Stunned', 1, 0.3]], cd: 2 },
-  e_firewave: { n: 'Wall of Flame', ty: 'spell', tg: 'row', m: 0.7, ap: [['Burning', 2, 1]], cd: 2 },
-  e_frost: { n: 'Grave Chill', ty: 'spell', tg: 'one', m: 0.9, ap: [['Stunned', 1, 0.25]], cd: 2 },
+  e_firewave: { n: 'Wall of Flame', ty: 'spell', tg: 'row', m: 0.6, ap: [['Burning', 2, 1]], cd: 3 },
+  e_frost: { n: 'Grave Chill', ty: 'spell', tg: 'one', m: 0.9, ap: [['Numbed', 2, 0.7]], cd: 2 },
   e_rouse: { n: 'Sound the Alarm', ty: 'buff', tg: 'self', summon: 'cutpurse', k: 1, cd: 3 },
   e_raise: { n: 'Raise Dead', ty: 'buff', tg: 'self', summon: 'skeleton', k: 2, cd: 4 },
   e_callthugs: { n: 'Call the Gang', ty: 'buff', tg: 'self', summon: 'thug', k: 2, cd: 5 },
@@ -184,8 +184,8 @@ function skillDesc(sk) {
   const p = [], tg = { one: 'one enemy', row: 'an enemy row', all: 'all enemies', ally: 'one ally', allies: 'the whole party', self: 'yourself' }[sk.tg];
   const kind = sk.el ? EL_NAME[sk.el] : sk.ty === 'spell' ? 'Arcane' : sk.dt ? DT_NAME[sk.dt] : 'Weapon';
   if (sk.m) p.push(`${kind} ${{ melee: 'melee attack', ranged: 'ranged attack', spell: 'spell' }[sk.ty]} on ${tg} for ${pct(sk.m)} damage${sk.sure ? ', never misses' : ''}.`);
-  if (sk.el === 'fire') p.push('Sets Burning.'); if (sk.el === 'frost') p.push('Leaves it Chilled.'); if (sk.el === 'lightning') p.push('Leaves it Charged.'); if (sk.el === 'holy') p.push('Purifies any aura.');
-  for (const [k, v] of Object.entries(sk.bu || {})) p.push(`+${v} ${BU_NAME[k]}.`);
+  if (sk.el === 'fire') p.push('Sets Burning.'); if (sk.el === 'frost') p.push('Numbs it (frost on a Numbed enemy freezes it).'); if (sk.el === 'lightning' && !(sk.bu && sk.bu.stagger)) p.push('+20 Stagger.'); if (sk.el === 'holy') p.push('Heals your most wounded ally for 15% of the damage.'); if (sk.el === 'arcane') p.push('Never misses; ignores half of ward.');
+  for (const [k, v] of Object.entries(sk.bu || {})) p.push(`+${v + (k === 'stagger' && sk.el === 'lightning' ? 20 : 0)} ${BU_NAME[k]}.`);
   if (sk.heal) p.push(`Heals ${tg} (${pct(sk.heal)} strength).`);
   if (sk.healP) p.push(`Restores ${pct(sk.healP)} of your health.`);
   if (sk.cleanse) p.push('Removes harmful states.');
@@ -193,7 +193,7 @@ function skillDesc(sk) {
   for (const [s, t] of sk.buff || []) p.push(`Grants ${s} to ${tg} (${t} turn${t > 1 ? 's' : ''}).`);
   if (sk.selfAp) p.push(`Leaves you ${sk.selfAp[0]}.`);
   if (sk.pay) p.push(`Against ${sk.pay.s.map(s => s === 'low' ? 'enemies below 35% health' : s).join(' or ')}: x${sk.pay.m} damage${sk.pay.ap ? ' and applies ' + sk.pay.ap[0] : ''}${sk.pay.consume ? ' (puts the fire out)' : ''}.`);
-  if (sk.leech) p.push(`Heals the ${sk.ty === 'melee' && sk.el === 'holy' ? 'party' : 'user'} for ${pct(sk.leech)} of the damage.`);
+  if (sk.leech) p.push(`Heals the ${sk.id === 'holyfire' ? 'party' : 'user'} for ${pct(sk.leech)} of the damage.`);
   if (sk.summon) p.push('Calls reinforcements.');
   if (sk.once) p.push('Once per fight.'); else if (sk.cd) p.push(`Cooldown ${sk.cd}.`);
   return p.join(' ');
@@ -201,31 +201,32 @@ function skillDesc(sk) {
 
 // ---------- classes ----------
 const CLASSES = {
-  warrior: { n: 'Warrior', row: 'F', hp: 30, hpl: 8, st: [4, 2, 1, 2], grow: ['might', 'agility'], wp: ['sword', 'axe', 'mace', 'spear', 'flail', 'warhammer', 'rapier', 'crossbow'], shield: true, armor: 3, base: ['bash', 'sunder', 'taunt', 'trip', 'cleave'], start: ['sword', 'shield', 'medium'],
-    blurb: 'Holds the front row. Breaks guards (Exposed), staggers foes into a stun, and opens bleeding wounds.',
-    subs: { guardian: { n: 'Guardian', sk: ['bulwark', 'slam', 'laststand'], blurb: 'Shields the party and staggers Exposed enemies with a mace or shield.' }, berserker: { n: 'Berserker', sk: ['reckless', 'execute', 'whirl'], blurb: 'Bleeds whole rows with a greataxe and executes the stunned and the dying.' } } },
-  rogue: { n: 'Rogue', row: 'F', hp: 22, hpl: 6, st: [2, 4, 2, 1], grow: ['agility', 'might'], wp: ['dagger', 'sword', 'bow', 'rapier', 'crossbow'], shield: false, armor: 2, base: ['knife', 'backstab', 'smoke', 'hamstring', 'dirty'], start: ['dagger', null, 'light'],
-    blurb: 'Marks a target for the whole party, poisons it, and backstabs anything Marked or Stunned.',
-    subs: { assassin: { n: 'Assassin', sk: ['ambush', 'garrote', 'deathmark'], blurb: 'Close-in killer: poison, garrotes, and huge hits on Marked, Stunned or Exposed targets.' }, ranger: { n: 'Ranger', sk: ['aimed', 'volley', 'pinning'], blurb: 'Fights from the back row with a bow; marks whole rows and pins targets in place.' } } },
+  warrior: { n: 'Warrior', row: 'F', hp: 30, hpl: 8, st: [4, 2, 1, 2], grow: ['might', 'agility'], wp: ['sword', 'axe', 'mace', 'spear', 'flail', 'warhammer', 'crossbow'], shield: true, armor: 3, base: ['bash', 'sunder', 'taunt', 'trip', 'cleave'], start: ['sword', 'shield', 'medium'],
+    blurb: 'Holds the front row with heavy weapons. Breaks guards (Exposed) and staggers enemies until they are stunned.',
+    subs: { guardian: { n: 'Guardian', sk: ['bulwark', 'slam', 'laststand'], blurb: 'Shields the party and staggers Exposed enemies with a mace or shield.' }, berserker: { n: 'Berserker', sk: ['reckless', 'execute', 'whirl'], blurb: 'Swings a greataxe through whole rows, staggering them, and executes the stunned and the dying.' } } },
+  rogue: { n: 'Rogue', row: 'F', hp: 22, hpl: 6, st: [2, 4, 2, 1], grow: ['agility', 'might'], wp: ['dagger', 'sabre', 'rapier', 'bow', 'crossbow'], shield: false, armor: 2, base: ['knife', 'backstab', 'smoke', 'hamstring', 'dirty'], start: ['dagger', null, 'light'],
+    blurb: 'Light blades that make enemies bleed, poison, and a mark that the whole party can exploit. Backstabs anything Marked, Stunned or Frozen.',
+    subs: { assassin: { n: 'Assassin', sk: ['ambush', 'garrote', 'deathmark'], blurb: 'Close-in killer: poison, garrotes, and huge hits on Marked, Stunned, Frozen or Exposed targets.' }, ranger: { n: 'Ranger', sk: ['aimed', 'volley', 'pinning'], blurb: 'Fights from the back row with a bow; marks whole rows and fires barbed arrows that bleed.' } } },
   mage: { n: 'Mage', row: 'B', hp: 18, hpl: 5, st: [1, 2, 4, 2], grow: ['mind', 'spirit'], wp: ['staff', 'dagger', 'wand'], shield: false, armor: 1, base: ['firebolt', 'frost', 'missile', 'gust', 'weaken'], start: ['staff', null, 'light'],
-    blurb: 'Commands fire, frost and lightning. Two different elements on one target cause a reaction: Melt, Shatter or Overload.',
-    subs: { pyromancer: { n: 'Pyromancer', sk: ['detonate', 'flamewave', 'inferno'], blurb: 'Sets whole rows alight and detonates the flames.' }, stormcaller: { n: 'Stormcaller', sk: ['chain', 'thunder', 'tempest'], blurb: 'Lightning that arcs through rows and staggers whole fights.' } } },
+    blurb: 'Blue magic: arcane bolts that never miss, frost that numbs and freezes, and lightning that staggers.',
+    subs: { cryomancer: { n: 'Cryomancer', sk: ['detonate', 'flamewave', 'inferno'], blurb: 'Frost control: numbs enemies so they miss, freezes them solid, and lances the frozen.' }, stormcaller: { n: 'Stormcaller', sk: ['chain', 'thunder', 'tempest'], blurb: 'Lightning that tears through rows and staggers enemies into a stun.' } } },
   priest: { n: 'Priest', row: 'B', hp: 22, hpl: 6, st: [2, 1, 2, 4], grow: ['spirit', 'might'], wp: ['mace', 'staff', 'spear', 'flail', 'warhammer', 'wand'], shield: true, armor: 3, base: ['mend', 'smite', 'bless', 'rebuke', 'sanctuary'], start: ['mace', 'shield', 'light'],
-    blurb: 'Heals and blesses. Holy damage purifies any elemental aura and is deadly to the undead.',
-    subs: { lightbringer: { n: 'Lightbringer', sk: ['radiance', 'purify', 'sunburst'], blurb: 'Party-wide healing and a holy blast that strikes every enemy.' }, warpriest: { n: 'Warpriest', sk: ['crushing', 'judgement', 'holyfire'], blurb: 'Fights in the front row with a warhammer; staggers, judges the helpless, and heals through holy fire.' } } }
+    blurb: 'Heals and blesses. Holy damage heals the party as it strikes, and the undead fear it.',
+    subs: { lightbringer: { n: 'Lightbringer', sk: ['radiance', 'purify', 'sunburst'], blurb: 'Party-wide healing and a holy blast that strikes every enemy.' }, flamekeeper: { n: 'Flamekeeper', sk: ['crushing', 'judgement', 'holyfire'], blurb: 'A holy-fire zealot in the front row: sets enemies ablaze with mace and prayer, and heals the party through the flames.' } } }
 };
 
 // ---------- items ----------
 const WT = {
-  sword: { n: 'Sword', die: [8, 10, 12], hit: 1, phys: 'slash', bu: { bleed: 20 }, note: 'Slash; +1 to hit; builds Bleed' },
-  axe: { n: 'Greataxe', die: [10, 12, 14], two: true, splash: true, phys: 'slash', bu: { bleed: 30 }, note: 'two-handed Slash; builds Bleed fast; basic attacks also hit a second front-row enemy for half' },
+  sword: { n: 'Sword', die: [8, 10, 12], hit: 1, phys: 'slash', bu: { bleed: 10, stagger: 10 }, note: 'Slash; +1 to hit; builds a little Bleed and Stagger' },
+  axe: { n: 'Greataxe', die: [10, 12, 14], two: true, splash: true, phys: 'slash', bu: { stagger: 25 }, note: 'two-handed heavy Slash; builds Stagger; basic attacks also hit a second front-row enemy for half' },
+  sabre: { n: 'Sabre', die: [6, 8, 10], fin: true, hit: 1, phys: 'slash', bu: { bleed: 30 }, note: 'curved Slash; uses Agility; +1 to hit; builds Bleed fast' },
   mace: { n: 'Mace', die: [7, 9, 11], bonus: 1, phys: 'strike', bu: { stagger: 20 }, note: 'Strike; builds Stagger' },
-  dagger: { n: 'Dagger', die: [4, 6, 8], fin: true, assassin: true, phys: 'pierce', bu: { bleed: 10 }, note: 'Pierce; uses Agility; always crits Marked or Stunned targets, and its crits deal double' },
+  dagger: { n: 'Dagger', die: [4, 6, 8], fin: true, assassin: true, phys: 'pierce', bu: { bleed: 20 }, note: 'Pierce; uses Agility; builds Bleed; always crits Marked, Stunned or Frozen targets, and its crits deal double' },
   spear: { n: 'Spear', die: [7, 9, 11], two: true, reach: true, phys: 'pierce', note: 'two-handed Pierce; melee skills work from the back row' },
   bow: { n: 'Bow', die: [7, 9, 11], two: true, ranged: true, fin: true, phys: 'pierce', note: 'two-handed Pierce; basic attacks are ranged and use Agility' },
   staff: { n: 'Staff', die: [4, 5, 6], sp: [8, 10, 12], two: true, phys: 'strike', bu: { stagger: 10 }, note: 'two-handed; much stronger spells and heals' },
   wand: { n: 'Wand', die: [4, 5, 6], sp: [6, 8, 10], hit: 1, phys: 'strike', note: 'one-handed; stronger spells and heals, +1 to hit' },
-  rapier: { n: 'Rapier', die: [6, 8, 10], fin: true, hit: 2, crit: 1, phys: 'pierce', note: 'Pierce; uses Agility; +2 to hit and crits on 19+' },
+  rapier: { n: 'Rapier', die: [6, 8, 10], fin: true, hit: 2, crit: 1, phys: 'pierce', bu: { bleed: 10 }, note: 'Pierce; uses Agility; +2 to hit and crits on 19+' },
   flail: { n: 'Flail', die: [7, 9, 11], phys: 'strike', bu: { stagger: 30 }, note: 'Strike; builds Stagger fast' },
   warhammer: { n: 'Warhammer', die: [10, 12, 14], two: true, hit: -1, phys: 'strike', bu: { stagger: 35 }, note: 'two-handed Strike; -1 to hit; builds Stagger very fast' },
   crossbow: { n: 'Crossbow', die: [9, 11, 13], two: true, ranged: true, xbow: true, init: -3, phys: 'pierce', note: 'two-handed Pierce; basic attacks are ranged and use Might or Agility, -3 initiative' }
@@ -247,7 +248,7 @@ const TRINKETS = [
   ['Scholar\'s Lens', { mind: 1, hit: 1 }, 2], ['Bear Totem', { might: 1, hp: 6 }, 2], ['Prayer Beads', { spirit: 1, regen: 1 }, 2], ['Stormglass Vial', { bu: { stagger: 20 } }, 3],
   ['Phoenix Feather', { phoenix: 1 }, 3], ['Veil of Shadows', { startHidden: 1 }, 3], ['Mirror Shard', { ward: 3, def: 2 }, 3],
   ['Ring of Power', { primary: 1 }, 1], ['Band of Power', { primary: 1, hp: 4 }, 2], ['Crown of Power', { primary: 2 }, 3],
-  ['Viper Fang', { bu: { poison: 20 } }, 2], ['Rimefrost Charm', { procs: [['Chilled', 0.25]] }, 2], ['Brand of the Inquisitor', { vs: [['Burning', 0.2], ['Chilled', 0.2], ['Charged', 0.2]] }, 3]
+  ['Viper Fang', { bu: { poison: 20 } }, 2], ['Rimefrost Charm', { procs: [['Numbed', 0.25]] }, 2], ['Brand of the Inquisitor', { vs: [['Burning', 0.2], ['Numbed', 0.2], ['Frozen', 0.2]] }, 3]
 ];
 // off-hand items: shields for the armoured classes, tomes for casters, parrying daggers for the quick
 const OFF = { shield: { n: 'Shield', cls: ['warrior', 'priest'], def: [2, 3, 4, 5, 6], arm: [0, 1, 1, 2, 2], fx: [{}, {}, {}, {}, {}] }, tome: { n: 'Tome', cls: ['mage', 'priest'], def: [0, 0, 0, 0, 0], arm: [0, 0, 0, 0, 0], fx: [{ mind: 1 }, { mind: 1, spirit: 1 }, { mind: 2, spirit: 2 }, { mind: 3, spirit: 2 }, { mind: 4, spirit: 3 }] },
@@ -263,11 +264,11 @@ const CONS = {
   greater: { n: 'Greater Potion', tg: 'ally', flatHeal: 34, price: 26, d: 'Heals one ally for 34 (+4 per level).', tier: 2 },
   fury: { n: 'Elixir of Fury', tg: 'ally', buff: [['Blessed', 3]], price: 12, d: 'One ally is Blessed for 3 turns.' },
   stoneskin: { n: 'Stoneskin Draught', tg: 'ally', buff: [['Guard', 2]], price: 12, d: 'One ally has Guard for 2 turns.' },
-  thunderstone: { n: 'Thunderstone', tg: 'all', flat: 2, el: 'lightning', bu: { stagger: 40 }, price: 20, d: 'Lightning damage to all enemies (leaves them Charged), +40 Stagger each.', tier: 2 },
+  thunderstone: { n: 'Thunderstone', tg: 'all', flat: 2, el: 'lightning', bu: { stagger: 40 }, price: 20, d: 'Lightning damage to all enemies, +40 Stagger each.', tier: 2 },
   tears: { n: 'Phoenix Tears', tg: 'downed', reviveP: 0.8, price: 30, d: 'Revives a downed ally at 80% health.', tier: 3 },
   salts: { n: 'Smelling Salts', tg: 'downed', reviveP: 0.4, price: 15, d: 'Revives a downed ally at 40% health.' },
   firebomb: { n: 'Firebomb', tg: 'row', flat: 5, el: 'fire', price: 14, d: 'Fire damage to an enemy row; sets it Burning.' },
-  frostflask: { n: 'Frost Flask', tg: 'row', flat: 3, el: 'frost', price: 12, d: 'Frost damage to an enemy row; leaves it Chilled.' },
+  frostflask: { n: 'Frost Flask', tg: 'row', flat: 3, el: 'frost', price: 12, d: 'Frost damage to an enemy row; Numbs it.' },
   flash: { n: 'Flash Powder', tg: 'row', flat: 1, bu: { stagger: 60 }, price: 16, d: '+60 Stagger to each enemy in a row.' },
   oil: { n: 'Oil Pot', tg: 'one', flat: 1, ap: [['Oiled', 4, 1]], price: 10, d: 'Douses one enemy in oil: the next fire hit Ignites it for +50% damage and long-lasting flames.' },
   tangle: { n: 'Tanglefoot Bag', tg: 'row', flat: 1, ap: [['Exposed', 2, 1]], price: 12, d: 'Leaves an enemy row Exposed for 2 turns.' },
@@ -276,9 +277,9 @@ const CONS = {
 };
 for (const k in CONS) CONS[k].id = k;
 // rarity: gear gains one step per affix; trinkets by their tier; set pieces have their own
-const RAR = ['Common', 'Uncommon', 'Rare', 'Epic', 'Set', 'Relic'], PROC_T = { Burning: 3, Exposed: 2, Marked: 3, Chilled: 2 };
+const RAR = ['Common', 'Uncommon', 'Rare', 'Epic', 'Set', 'Relic'], PROC_T = { Burning: 3, Exposed: 2, Marked: 3, Numbed: 2 };
 const AFFIX = {
-  flaming: { n: 'Flaming', on: 'w', pre: 1, fx: { procs: [['Burning', 0.25]] } }, hunters: { n: 'Heavy', on: 'w', pre: 1, fx: { bu: { stagger: 15 } } }, serrated: { n: 'Serrated', on: 'w', pre: 1, fx: { bu: { bleed: 15 } } }, venomous: { n: 'Venomous', on: 'w', pre: 1, fx: { bu: { poison: 15 } } }, frosted: { n: 'Frostbitten', on: 'w', pre: 1, fx: { procs: [['Chilled', 0.25]] } }, sundering: { n: 'Sundering', on: 'w', pre: 1, fx: { procs: [['Exposed', 0.2]] } },
+  flaming: { n: 'Flaming', on: 'w', pre: 1, fx: { procs: [['Burning', 0.25]] } }, hunters: { n: 'Heavy', on: 'w', pre: 1, fx: { bu: { stagger: 15 } } }, serrated: { n: 'Serrated', on: 'w', pre: 1, fx: { bu: { bleed: 15 } } }, venomous: { n: 'Venomous', on: 'w', pre: 1, fx: { bu: { poison: 15 } } }, frosted: { n: 'Frostbitten', on: 'w', pre: 1, fx: { procs: [['Numbed', 0.25]] } }, sundering: { n: 'Sundering', on: 'w', pre: 1, fx: { procs: [['Exposed', 0.2]] } },
   keen: { n: 'Keen', on: 'w', pre: 1, fx: { crit: 1 } }, balanced: { n: 'Balanced', on: 'w', pre: 1, fx: { hit: 1 } }, vampiric: { n: 'Vampiric', on: 'w', pre: 1, fx: { leech: 0.1 } }, swift: { n: 'Swift', on: 'w', pre: 1, fx: { init: 3 } },
   sturdy: { n: 'Sturdy', on: 'a', pre: 1, fx: { arm: 1 } }, warded: { n: 'Warded', on: 'a', pre: 1, fx: { ward: 2 } }, spiked: { n: 'Spiked', on: 'a', pre: 1, fx: { thorns: 2 } }, stalwart: { n: 'Stalwart', on: 'a', pre: 1, fx: { hp: 8 } }, mending: { n: 'Mending', on: 'a', pre: 1, fx: { regen: 1 } },
   power: { n: 'Power', fx: { primary: 1 } }, power2: { n: 'Power', fx: { primary: 1 } }, might: { n: 'Might', fx: { might: 1 } }, agility: { n: 'Agility', fx: { agility: 1 } }, mind: { n: 'Mind', fx: { mind: 1 } }, spirit: { n: 'Spirit', fx: { spirit: 1 } }, vigor: { n: 'Vigor', fx: { hp: 6 } }, duelist: { n: 'the Duelist', fx: { pay: 0.15 } }, lingering: { n: 'Lingering', fx: { dur: 1 } }
@@ -293,7 +294,7 @@ const SETS = {
 // relics: one-of-a-kind items that only turn up on contracts of rank 3 and above
 const UNIQUES = {
   dawnbreaker: { k: 'weapon', type: 'sword', n: 'Dawnbreaker', fx: { dmg: 3, hit: 1, procs: [['Burning', 0.3]] } }, widowmaker: { k: 'weapon', type: 'dagger', n: 'Widowmaker', fx: { crit: 3, vs: [['Marked', 0.3]], bu: { poison: 20 } } },
-  stormcall: { k: 'weapon', type: 'staff', n: 'Stormcall', fx: { spd: 4, procs: [['Charged', 0.3]], mind: 2 } }, longwatch: { k: 'weapon', type: 'bow', n: 'Longwatch', fx: { pen: 4, hit: 2, init: 4 } },
+  stormcall: { k: 'weapon', type: 'staff', n: 'Stormcall', fx: { spd: 4, bu: { stagger: 20 }, mind: 2 } }, longwatch: { k: 'weapon', type: 'bow', n: 'Longwatch', fx: { pen: 4, hit: 2, init: 4 } },
   kingsbane: { k: 'weapon', type: 'warhammer', n: 'Kingsbane', fx: { exec: 0.4, dmg: 2, bu: { stagger: 20 } } }, gravemace: { k: 'weapon', type: 'mace', n: 'Gravemace', fx: { leech: 0.2, spirit: 2, might: 1 } },
   oathkeeper: { k: 'shield', type: 'shield', n: 'Oathkeeper', fx: { arm: 2, dr: 0.1, startGuard: 1 } }, mountain: { k: 'armor', type: 'heavy', n: 'Mountain\'s Heart', fx: { hp: 25, regen: 3 } },
   shadowskin: { k: 'armor', type: 'medium', n: 'Shadowskin', fx: { def: 3, agility: 2, startHidden: 1 } }, mantle: { k: 'armor', type: 'light', n: 'Mantle of Stars', fx: { ward: 4, mind: 2, cdr: 1 } },
@@ -356,13 +357,13 @@ const TALENTS = {
   berserker: [[['Bloodlust', { lowhp: 0.25 }], ['Brutal Force', { dmg: 3, hp: 6 }]], [['Butcher', { exec: 0.3 }], ['Thick Hide', { hp: 14 }]], [['Feast', { killHeal: 0.15 }], ['Savage', { crit: 2 }]], [['Opportunist', { vs: [['Stunned', 0.35], ['Exposed', 0.15]] }], ['Relentless', { cdr: 1 }]], [['Rampage', { aoe: 0.3, bu: { bleed: 10 } }], ['Deathless Rage', { phoenix: 1 }]]],
   assassin: [[['Opener', { opener: 1 }], ['Precision', { hit: 2 }]], [['Lethality', { crit: 2 }], ['Slippery', { def: 2 }]], [['Exploit Weakness', { pay: 0.4 }], ['Venom', { bu: { poison: 25 } }]], [['Cull', { exec: 0.35 }], ['Shadowstep', { startHidden: 1 }]], [['Master Assassin', { vs: [['Marked', 0.45]], crit: 1 }], ['Quick Hands', { cdr: 1 }]]],
   ranger: [[['Eagle Eye', { hit: 2 }], ['Fleet', { init: 5 }]], [['Hunter\'s Mark', { procs: [['Marked', 0.3]] }], ['Camouflage', { def: 3, hp: 8 }]], [['Piercing Arrows', { pen: 3 }], ['Steady Aim', { crit: 2, dmg: 1 }]], [['Suppressing Fire', { aoe: 0.3 }], ['Predator', { vs: [['Marked', 0.3]] }]], [['Deadeye', { dmg: 3 }], ['Trapper', { chance: 0.2, dur: 1 }]]],
-  pyromancer: [[['Kindling', { procs: [['Burning', 0.3]] }], ['Focus', { mind: 1, hit: 1 }]], [['Wildfire', { spread: 1 }], ['Ember Ward', { ward: 3, immune: 'Burning' }]], [['Scorch', { vs: [['Burning', 0.25]] }], ['Lingering Flames', { dur: 1 }]], [['Conflagration', { aoe: 0.3 }], ['Quickened Casting', { cdr: 1 }]], [['Heart of Fire', { pay: 0.5 }], ['Arcane Might', { spd: 4 }]]],
-  stormcaller: [[['Static', { procs: [['Charged', 0.3]] }], ['Focus', { mind: 1, hit: 1 }]], [['Overcharge', { vs: [['Charged', 0.3], ['Stunned', 0.2]] }], ['Storm Ward', { ward: 3, def: 1 }]], [['Forked Lightning', { aoe: 0.3 }], ['Tailwind', { init: 5, def: 2 }]], [['Thunderstruck', { bu: { stagger: 20 } }], ['Quickened Casting', { cdr: 1 }]], [['Eye of the Storm', { pen: 4, crit: 1 }], ['Arcane Might', { spd: 4 }]]],
-  lightbringer: [[['Gentle Hands', { healm: 0.2 }], ['Devotion', { spirit: 1, hp: 6 }]], [['Beacon', { aura: { regen: 2 } }], ['Sanctified', { ward: 3 }]], [['Radiant', { vs: [['Burning', 0.25], ['Chilled', 0.25], ['Charged', 0.25]] }], ['Swift Prayers', { cdr: 1 }]], [['Benediction', { aura: { hit: 1, regen: 1 } }], ['Martyr', { hp: 14 }]], [['Miracle Worker', { healm: 0.3 }], ['Divine Wrath', { spd: 4 }]]],
-  warpriest: [[['Zeal', { dmg: 3, hp: 6 }], ['Devotion', { spirit: 1, hp: 6 }]], [['Armour of Faith', { arm: 2 }], ['Smiter', { hit: 2 }]], [['Crusader', { aura: { dmg: 1 } }], ['Righteous Fury', { vs: [['Exposed', 0.25]] }]], [['Hammer of Judgement', { bu: { stagger: 20 } }], ['Blood for Blessing', { leech: 0.15 }]], [['Avatar of War', { dr: 0.12, lowhp: 0.2 }], ['Shepherd', { healm: 0.25, aura: { regen: 2 } }]]]
+  cryomancer: [[['Rime', { procs: [['Numbed', 0.3]] }], ['Focus', { mind: 1, hit: 1 }]], [['Permafrost', { dur: 1 }], ['Ice Armour', { ward: 3, immune: 'Numbed' }]], [['Cold Snap', { vs: [['Numbed', 0.25]] }], ['Glacial Ward', { aura: { ward: 1 }, def: 1 }]], [['Hailstorm', { aoe: 0.3 }], ['Quickened Casting', { cdr: 1 }]], [['Heart of Winter', { vs: [['Frozen', 0.5]] }], ['Arcane Might', { spd: 4 }]]],
+  stormcaller: [[['Static', { bu: { stagger: 15 } }], ['Focus', { mind: 1, hit: 1 }]], [['Overcharge', { vs: [['Stunned', 0.3]] }], ['Storm Ward', { ward: 3, def: 1 }]], [['Forked Lightning', { aoe: 0.3 }], ['Tailwind', { init: 5, def: 2 }]], [['Thunderstruck', { bu: { stagger: 20 } }], ['Quickened Casting', { cdr: 1 }]], [['Eye of the Storm', { pen: 4, crit: 1 }], ['Arcane Might', { spd: 4 }]]],
+  lightbringer: [[['Gentle Hands', { healm: 0.2 }], ['Devotion', { spirit: 1, hp: 6 }]], [['Beacon', { aura: { regen: 2 } }], ['Sanctified', { ward: 3 }]], [['Radiant', { vs: [['Burning', 0.25], ['Numbed', 0.25]] }], ['Swift Prayers', { cdr: 1 }]], [['Benediction', { aura: { hit: 1, regen: 1 } }], ['Martyr', { hp: 14 }]], [['Miracle Worker', { healm: 0.3 }], ['Divine Wrath', { spd: 4 }]]],
+  flamekeeper: [[['Zeal', { dmg: 3, hp: 6 }], ['Devotion', { spirit: 1, hp: 6 }]], [['Armour of Faith', { arm: 2 }], ['Fire Ward', { ward: 2, immune: 'Burning' }]], [['Crusader', { aura: { dmg: 1 } }], ['Righteous Fire', { vs: [['Burning', 0.25]] }]], [['Kindled Faith', { procs: [['Burning', 0.3]] }], ['Blood for Blessing', { leech: 0.15 }]], [['Avatar of Flame', { dr: 0.12, lowhp: 0.2 }], ['Shepherd', { healm: 0.25, aura: { regen: 2 } }]]]
 };
 // each path's built-in strengths, on top of its skills
-const SUBFX = { guardian: {}, berserker: { leech: 0.2, hp: 14, dr: 0.15 }, assassin: { def: 3, crit: 1, hp: 10, leech: 0.1 }, ranger: {}, pyromancer: {}, stormcaller: { chance: 0.1, ward: 1 }, lightbringer: {}, warpriest: { arm: 2, dr: 0.12, healm: 0.5, aura: { regen: 5 } } };
+const SUBFX = { guardian: {}, berserker: { leech: 0.2, hp: 14, dr: 0.15 }, assassin: { def: 3, crit: 1, hp: 10, leech: 0.1 }, ranger: {}, cryomancer: {}, stormcaller: { chance: 0.1, ward: 1 }, lightbringer: {}, flamekeeper: { arm: 2, dr: 0.12, healm: 0.6, aura: { regen: 8 } } };
 const talentsOf = h => h.sub ? (h.tal || []).map((c, k) => c === 0 || c === 1 ? TALENTS[h.sub][k][c] : null).filter(Boolean) : [];
 function setTalent(S, hi, k, c) { const h = S.party[hi]; if (!h || !h.sub || k < 0 || k > h.level - 6 || (c !== 0 && c !== 1)) return false; h.tal = h.tal || []; const m0 = maxHp(h); h.tal[k] = c; h.hp = clamp(h.hp + Math.max(0, maxHp(h) - m0), 1, maxHp(h)); return true; }
 
@@ -420,8 +421,8 @@ const EN = {
   bear: { n: 'Cave Bear', fam: 'beast', ar: 'hide', hp: 48, atk: 5, agi: 2, arm: 1, ward: 0, die: 10, row: 'F', sk: ['e_hit', 'e_maul', 'e_roar'], elite: true },
   troll: { n: 'Hill Troll', fam: 'beast', ar: 'hide', hp: 52, atk: 5, agi: 1, arm: 2, ward: 0, die: 10, row: 'F', sk: ['e_hit', 'e_crush', 'e_roar'], elite: true, regen: 0.05 },
   acolyte: { n: 'Acolyte', fam: 'cult', ar: 'cloth', hp: 10, atk: 2, agi: 2, arm: 0, ward: 1, die: 5, row: 'B', sk: ['e_bolt', 'e_heal'] },
-  zealot: { n: 'Zealot', fam: 'cult', ar: 'cloth', hp: 15, atk: 4, agi: 3, arm: 0, ward: 0, die: 6, row: 'F', sk: ['e_hit', 'e_charge'] },
-  flamecaller: { n: 'Flamecaller', fam: 'cult', ar: 'cloth', hp: 11, atk: 3, agi: 2, arm: 0, ward: 2, die: 6, row: 'B', sk: ['e_fire', 'e_firewave'], act: 2 },
+  zealot: { n: 'Zealot', fam: 'cult', ar: 'cloth', hp: 15, atk: 3, agi: 3, arm: 0, ward: 0, die: 6, row: 'F', sk: ['e_hit', 'e_charge'] },
+  flamecaller: { n: 'Flamecaller', fam: 'cult', ar: 'cloth', hp: 10, atk: 3, agi: 2, arm: 0, ward: 2, die: 5, row: 'B', sk: ['e_fire', 'e_firewave'], act: 2 },
   hexer: { n: 'Hexer', fam: 'cult', ar: 'cloth', hp: 10, atk: 3, agi: 2, arm: 0, ward: 2, die: 6, row: 'B', sk: ['e_bolt', 'e_expose', 'e_mark'], act: 2 },
   imp: { n: 'Imp', fam: 'cult', ar: 'hide', hp: 9, atk: 3, agi: 5, arm: 0, ward: 1, die: 4, row: 'F', sk: ['e_fire', 'e_hit'] },
   champion: { n: 'Cult Champion', fam: 'cult', ar: 'plate', hp: 44, atk: 5, agi: 3, arm: 2, ward: 2, die: 8, row: 'F', sk: ['e_hit', 'e_crush', 'e_rally'], elite: true },
@@ -455,30 +456,31 @@ const frontOf = (C, side) => living(C, side).filter(u => u.row === 'F');
 const other = side => side === 'H' ? 'E' : 'H';
 const unit = (C, id) => C.units.find(u => u.id === id);
 const say = (C, t) => { C.log.push(t); if (C.log.length > 200) C.log.shift(); };
-const AURA = { fire: 'Burning', frost: 'Chilled', lightning: 'Charged' }, AURAS = ['Burning', 'Chilled', 'Charged'], DOT = ['Burning', 'Poisoned'];
-const RX_M = { Melt: 2, Shatter: 1.3, Overload: 1, Purify: 1.5, Ignite: 1.5 };
+const AURA = { fire: 'Burning', frost: 'Numbed' }, AURAS = ['Burning', 'Numbed', 'Frozen'], DOT = ['Burning', 'Poisoned'];
+const RX_M = { Melt: 2, Shatter: 1.3, Overload: 1, Ignite: 1.5 };
+const helpless = t => has(t, 'Stunned') || has(t, 'Frozen');
 function addState(C, t, s, turns, src, pow) {
   if (t.side === 'H' && src && src.side !== 'H' && DEBUFFS.includes(s) && C.rng && C.rng() < t.st.spirit * K.spiritResist) { say(C, `${t.name} resists ${s}.`); return false; }
-  if ((t.fx.immune || []).includes(s) || (s === 'Stunned' && has(t, 'Steady'))) { say(C, `${t.name} shrugs off ${s}.`); return false; }
-  t.states[s] = { t: turns + (src && src !== t && DEBUFFS.includes(s) ? src.fx.dur || 0 : 0), pow: pow || 2 + (src ? src.lvl : 1), fresh: C.cur === t.id }; return true;
+  if ((t.fx.immune || []).includes(s) || ((s === 'Stunned' || s === 'Frozen') && has(t, 'Steady'))) { say(C, `${t.name} shrugs off ${s}.`); return false; }
+  t.states[s] = { t: turns + (src && src !== t && DEBUFFS.includes(s) ? src.fx.dur || 0 : 0), pow: pow || (src && src.side === 'E' ? Math.round(2 + src.lvl * 0.6) : 2 + (src ? src.lvl : 1)), fresh: C.cur === t.id }; return true;
 }
 // what kind of damage an attack does: an element, or a physical type from the skill or the weapon
 function kindOf(att, sk) { if (sk.el) return { el: sk.el }; if (sk.ty === 'spell') return { el: 'arcane' }; if (sk.flat !== undefined) return {}; return { phys: sk.dt || (att.w && att.w.phys) || 'slash' }; }
 const atkStat = (u, sk) => sk.el === 'holy' ? u.st.spirit : sk.ty === 'spell' ? u.st.mind : u.side === 'H' && (u.w.fin && sk.ty !== 'spell') ? Math.max(u.st.agility, sk.ty === 'ranged' ? 0 : u.st.might) : sk.ty === 'ranged' ? (u.w.xbow ? Math.max(u.st.might, u.st.agility) : u.st.agility) : u.st.might;
 function skillType(u, sk) { return sk.id === 'attack' && u.w.ranged ? 'ranged' : sk.ty; }
 function hitNeed(att, sk, t) {
-  if (sk.sure || sk.flat !== undefined) return 2;
-  const ty = skillType(att, sk), bonus = atkStat(att, { ...sk, ty }) + att.w.hit + (att.fx.hit || 0) + (has(att, 'Blessed') ? 2 : 0) + (has(t, 'Marked') ? 3 : 0) + (has(t, 'Stunned') ? 4 : 0) + (has(t, 'Chilled') ? 2 : 0) + (att.streak || 0) * 3;
+  if (sk.sure || sk.flat !== undefined || (sk.ty === 'spell' && !sk.el)) return 2;
+  const ty = skillType(att, sk), bonus = atkStat(att, { ...sk, ty }) + att.w.hit + (att.fx.hit || 0) + (has(att, 'Blessed') ? 2 : 0) + (has(t, 'Marked') ? 3 : 0) + (helpless(t) ? 4 : 0) - (has(att, 'Numbed') ? 3 : 0) + (att.streak || 0) * 3;
   return clamp(9 + t.st.agility + t.defb - bonus, 2, 20);
 }
 // which elemental reaction a hit would set off on this target, if any
 function reactionOf(sk, t) {
-  if (t.side !== 'E' || !sk.el || sk.el === 'arcane') return null;
+  if (t.side !== 'E' || !sk.el) return null;
   if (sk.el === 'fire' && has(t, 'Oiled')) return 'Ignite';
-  const a = AURAS.find(x => has(t, x)); if (!a) return null;
-  if (sk.el === 'holy') return 'Purify';
-  const pair = { fire: { Chilled: 'Melt', Charged: 'Overload' }, frost: { Burning: 'Melt', Charged: 'Shatter' }, lightning: { Chilled: 'Shatter', Burning: 'Overload' } }[sk.el];
-  return pair ? pair[a] || null : null;
+  const frost = has(t, 'Numbed') || has(t, 'Frozen');
+  if (sk.el === 'fire' && frost) return 'Melt'; if (sk.el === 'frost' && has(t, 'Burning')) return 'Melt';
+  if (sk.el === 'lightning' && has(t, 'Burning')) return 'Overload'; if (sk.el === 'lightning' && frost) return 'Shatter';
+  return null;
 }
 const payHit = (sk, t) => !!(sk.pay && sk.pay.s.some(s => s === 'low' ? t.hp / t.max < 0.35 : has(t, s)));
 // damage for a given die roll; pure, so the AI and the preview can use it
@@ -492,17 +494,17 @@ function damage(att, sk, t, roll, crit) {
   if (rx) m *= RX_M[rx];
   if (has(t, 'Marked') && t.fam === 'bandit') m *= 1.25;
   if (has(t, 'Exposed') && kd.phys) m *= 1.2;
-  if (has(att, 'Blessed')) m *= 1.2;
+  if (has(att, 'Blessed')) m *= 1.2; if (has(att, 'Numbed')) m *= 0.75;
   if (att.fx.lowhp && att.hp / att.max < 0.5) m *= 1 + att.fx.lowhp; if (att.fx.exec && t.hp / t.max < 0.3) m *= 1 + att.fx.exec; if (att.fx.aoe && sk.tg !== 'one') m *= 1 + att.fx.aoe;
   for (const [vs, v] of att.fx.vs || []) if (has(t, vs)) m *= 1 + v;
   if (crit) m *= att.w.assassin ? 2 : 1.5;
-  const armour = sk.flat !== undefined || has(t, 'Exposed') ? 0 : Math.max(0, (kd.phys ? t.arm : t.ward) - (att.fx.pen || 0));
+  const armour = sk.flat !== undefined || has(t, 'Exposed') ? 0 : Math.max(0, (kd.phys ? t.arm : kd.el === 'arcane' ? Math.floor(t.ward / 2) : t.ward) - (att.fx.pen || 0));
   let d = Math.max(1, Math.round(base * m) - armour); if (has(t, 'Guard')) d = Math.max(1, Math.round(d / 2)); if (t.fx.dr) d = Math.max(1, Math.round(d * (1 - t.fx.dr)));
   return { d, payoff, rx };
 }
 // meter buildup a hit would add: the skill's own, the weapon's for physical hits, and gear
 function buildOf(att, sk) { const out = {}, add = o => { for (const [k, v] of Object.entries(o || {})) out[k] = (out[k] || 0) + v; };
-  add(sk.bu); const kd = kindOf(att, sk); if (sk.flat === undefined && kd.phys && att.w.bu && (!sk.dt || sk.dt === att.w.phys)) add(att.w.bu); if (sk.flat === undefined) add(att.fx.bu); return out; }
+  add(sk.bu); const kd = kindOf(att, sk); if (sk.flat === undefined && kd.phys && att.w.bu && (!sk.dt || sk.dt === att.w.phys)) add(att.w.bu); if (kd.el === 'lightning') add({ stagger: 20 }); if (sk.flat === undefined) add(att.fx.bu); return out; }
 function preview(C, att, sk, t) {
   const need = hitNeed(att, sk, t), sure = sk.sure || sk.flat !== undefined, p = sure ? 1 : (21 - Math.max(2, need)) / 20, g = sure ? 0 : Math.max(0, Math.min(K.glance, need - 2)) / 20;
   const r1 = damage(att, sk, t, 1, false), lo = r1.d, hi = damage(att, sk, t, sk.flat !== undefined ? 1 : dieOf(att, sk), false).d, tags = [], kd = kindOf(att, sk);
@@ -510,7 +512,7 @@ function preview(C, att, sk, t) {
   if (r1.payoff) tags.push(`x${(sk.pay.m + (att.fx.pay || 0)).toFixed(1)} vs ${sk.pay.s.filter(s => s === 'low' ? t.hp / t.max < 0.35 : has(t, s)).map(s => s === 'low' ? 'wounded' : s).join('/')}`);
   if (kd.phys && t.ar && ARMT[t.ar][kd.phys] !== 1) tags.push(`${DT_NAME[kd.phys]} vs ${AR_NAME[t.ar].toLowerCase()} x${ARMT[t.ar][kd.phys]}`);
   if (kd.el && t.aff && t.aff[kd.el] && t.aff[kd.el] !== 1) tags.push(`${EL_NAME[kd.el]} x${t.aff[kd.el]}`);
-  if (has(t, 'Exposed')) tags.push(`Exposed: no armour${kd.phys ? ', x1.2' : ''}`); if (has(t, 'Marked') && t.fam === 'bandit') tags.push('Marked bandit x1.25'); if (has(att, 'Blessed')) tags.push('Blessed x1.2');
+  if (has(t, 'Exposed')) tags.push(`Exposed: no armour${kd.phys ? ', x1.2' : ''}`); if (has(att, 'Numbed')) tags.push('you are Numbed x0.75'); if (kd.el === 'arcane' && t.ward) tags.push('arcane: half ward'); if (has(t, 'Marked') && t.fam === 'bandit') tags.push('Marked bandit x1.25'); if (has(att, 'Blessed')) tags.push('Blessed x1.2');
   for (const [vs, v] of att.fx.vs || []) if (has(t, vs)) tags.push(`talent vs ${vs} x${(1 + v).toFixed(2)}`);
   if (has(t, 'Guard')) tags.push('Guard halves'); const arm = sk.flat !== undefined || has(t, 'Exposed') ? 0 : Math.max(0, (kd.phys ? t.arm : t.ward) - (att.fx.pen || 0)); if (arm) tags.push(`-${arm} ${kd.phys ? 'armour' : 'ward'}`);
   if (t.side === 'E') for (const [k, v] of Object.entries(buildOf(att, sk))) if (t.bres[k]) tags.push(`+${Math.round(v * t.bres[k])} ${BU_NAME[k]}`); else if (v) tags.push(`immune to ${BU_NAME[k]}`);
@@ -557,13 +559,14 @@ function buildUp(S, C, t, k, amt) {
   if (k === 'stagger') { if (has(t, 'Steady')) say(C, `${t.name} reels but keeps its footing.`); else if (addState(C, t, 'Stunned', 1)) { say(C, `${t.name}'s guard breaks: Stunned.`); C.fx.push({ id: t.id, tag: 'Stagger' }); } }
 }
 function react(S, C, att, t, rx, d) {
-  for (const a of AURAS) delete t.states[a]; S.stats.combos++;
+  S.stats.combos++;
   if (rx === 'Ignite') { delete t.states.Oiled; addState(C, t, 'Burning', 5, att); say(C, `The oil catches: ${t.name} is engulfed.`); }
-  if (rx === 'Shatter') { addState(C, t, 'Exposed', 2, att); say(C, `Shatter: ${t.name}'s defences crack.`); }
-  if (rx === 'Melt') say(C, 'Melt: fire and frost tear at each other.');
-  if (rx === 'Overload') { const splash = Math.max(1, Math.round(d * 0.6)); say(C, `Overload: the blast rips through ${t.name}'s row for ${splash}.`); for (const o of living(C, t.side).filter(u => u !== t && u.row === t.row)) { C.fx.push({ id: o.id, d: splash }); hurt(S, C, o, splash, att); } }
-  if (rx === 'Purify') { const v = Math.round(d * 0.15); for (const m of living(C, att.side)) heal(C, m, v); say(C, `Purify: holy light burns the aura away, and the party is healed for ${v}.`); }
+  if (rx === 'Melt') { for (const a of AURAS) delete t.states[a]; say(C, 'Melt: fire and frost tear at each other.'); }
+  if (rx === 'Shatter') { delete t.states.Numbed; delete t.states.Frozen; addState(C, t, 'Exposed', 2, att); say(C, `Shatter: the ice on ${t.name} cracks its armour open.`); }
+  if (rx === 'Overload') { delete t.states.Burning; const splash = Math.max(1, Math.round(d * 0.6)); say(C, `Overload: the flames on ${t.name} explode through its row for ${splash}.`); for (const o of living(C, t.side).filter(u => u !== t && u.row === t.row)) { C.fx.push({ id: o.id, d: splash }); hurt(S, C, o, splash, att); } }
 }
+// frost numbs; frost on a numbed enemy (or Deep Freeze) freezes it solid
+function frostOn(C, att, t, sk) { if (has(t, 'Frozen')) return; if ((has(t, 'Numbed') || sk.freeze) && !has(t, 'Steady')) { delete t.states.Numbed; if (addState(C, t, 'Frozen', 1, att)) say(C, `${t.name} is frozen solid.`); } else addState(C, t, 'Numbed', 2, att); }
 function strike(S, C, att, sk, t, forceCrit, scale) {
   const need = hitNeed(att, sk, t), r = die(S, 20), ty = skillType(att, sk), bu = buildOf(att, sk);
   if (r < need || (r === 1 && !sk.sure && sk.flat === undefined)) { if (att.side === 'H') att.streak = Math.min(3, (att.streak || 0) + 1);
@@ -571,7 +574,7 @@ function strike(S, C, att, sk, t, forceCrit, scale) {
     say(C, `${att.name} uses ${sk.n} on ${t.name}: rolled ${r}, needed ${need}. Miss.`); C.fx.push({ id: t.id, miss: 1 }); return 0; }
   att.streak = 0;
   const opener = sk.flat === undefined && att.fx.opener && !att.used.opener; if (opener) att.used.opener = true;
-  const crit = sk.flat === undefined && (forceCrit || opener || r >= 20 - (att.fx.crit || 0) - (att.side === 'H' ? Math.floor(att.st.mind / K.mindCrit) : 0) || (att.w.assassin && ty !== 'spell' && (has(t, 'Marked') || has(t, 'Stunned'))));
+  const crit = sk.flat === undefined && (forceCrit || opener || r >= 20 - (att.fx.crit || 0) - (att.side === 'H' ? Math.floor(att.st.mind / K.mindCrit) : 0) || (att.w.assassin && ty !== 'spell' && (has(t, 'Marked') || helpless(t))));
   let { d, payoff, rx } = damage(att, sk, t, die(S, dieOf(att, sk)), crit); if (scale) d = Math.max(1, Math.round(d * scale));
   say(C, `${att.name} uses ${sk.n} on ${t.name}: rolled ${r} (needed ${need})${crit ? ', critical' : ''}. ${d} damage.`);
   C.fx.push({ id: t.id, d, crit, payoff, tag: rx || '' }); if (payoff) S.stats.combos++;
@@ -580,7 +583,8 @@ function strike(S, C, att, sk, t, forceCrit, scale) {
   if (rx) react(S, C, att, t, rx, d);
   if (!up(t) && up(att)) { if (att.fx.killHeal) heal(C, att, att.max * att.fx.killHeal); if (att.fx.spread && burning) { const o = living(C, other(att.side)).find(u => !has(u, 'Burning')); if (o && addState(C, o, 'Burning', 3, att)) say(C, `The fire leaps to ${o.name}.`); } }
   if (up(t)) {
-    if (!rx && t.side === 'E' && AURA[sk.el] && !(payoff && sk.pay.consume)) addState(C, t, AURA[sk.el], sk.el === 'fire' ? 3 : 2, att);
+    if (!rx && t.side === 'E' && sk.el === 'fire' && !(payoff && sk.pay.consume)) addState(C, t, 'Burning', 3, att);
+    if (!rx && sk.el === 'frost') frostOn(C, att, t, sk);
     for (const [k, v] of Object.entries(bu)) buildUp(S, C, t, k, v);
     for (const [s, turns, ch] of sk.ap || []) if (up(t) && rnd(S) < ch + (att.fx.chance || 0) && addState(C, t, s, turns, att)) say(C, `${t.name} is ${s}.`);
     if (up(t) && payoff && sk.pay.ap && addState(C, t, sk.pay.ap[0], sk.pay.ap[1], att)) say(C, `${t.name} is ${sk.pay.ap[0]}.`);
@@ -593,7 +597,8 @@ function useSkill(S, C, att, sk, tspec) {
   if (sk.m || sk.flat !== undefined) { if (hidden) delete att.states.Hidden;
     for (const t of ts) if (up(t)) total += strike(S, C, att, sk, t, hidden);
     if (sk.id === 'attack' && att.w.splash && ts[0]) { const o = frontOf(C, other(att.side)).find(u => u !== ts[0] && u.row === ts[0].row); if (o) total += strike(S, C, att, sk, o, false, 0.5); }
-    const leech = (sk.leech || 0); if (total && up(att)) { if (leech && sk.el === 'holy' && att.side === 'H') { for (const m of living(C, 'H')) heal(C, m, total * leech / 2); say(C, `The party is healed by ${sk.n}.`); } else if (leech) heal(C, att, total * leech); if (att.fx.leech) heal(C, att, total * att.fx.leech); }
+    if (total && sk.el === 'holy') { const w = living(C, att.side).sort((a, b) => a.hp / a.max - b.hp / b.max)[0]; if (w && w.hp < w.max) { const a = heal(C, w, total * 0.15); if (a) say(C, `Holy light mends ${w.name} for ${a}.`); } }
+    const leech = (sk.leech || 0); if (total && up(att)) { if (leech && (sk.el === 'holy' || sk.id === 'holyfire') && att.side === 'H') { for (const m of living(C, 'H')) heal(C, m, total * leech / 2); say(C, `The party is healed by ${sk.n}.`); } else if (leech) heal(C, att, total * leech); if (att.fx.leech) heal(C, att, total * att.fx.leech); }
   } else if (sk.ap && !sk.heal) for (const t of ts) for (const [s, turns, ch] of sk.ap) if (rnd(S) < ch && addState(C, t, s, turns, att)) say(C, `${t.name} is ${s}.`);
   if (sk.heal || sk.flatHeal || sk.healP) for (const t of ts) { if (!up(t)) continue; const v = sk.healP ? t.max * sk.healP : sk.flatHeal ? sk.flatHeal + 4 * att.lvl : (die(S, att.w.sp) + att.st.spirit * 1.5) * sk.heal * (has(att, 'Blessed') ? 1.2 : 1) * (1 + (att.fx.healm || 0));
     const a = heal(C, t, v); say(C, `${att.name} uses ${sk.n}: ${t.name} regains ${a}.`); C.fx.push({ id: t.id, h: a }); }
@@ -609,7 +614,7 @@ function tick(u) { for (const s of Object.keys(u.states)) { const st = u.states[
 function endTurn(S, C, u) { tick(u); checkOver(S, C); if (!C.over) nextUp(S, C); }
 function checkOver(S, C) { if (!living(C, 'E').length) C.over = 'win'; else if (!living(C, 'H').filter(u => !u.npc).length) C.over = 'lose'; else if (C.obj && C.obj.k === 'hold' && C.round > C.obj.rounds) { C.over = 'win'; for (const u of living(C, 'E')) u.hp = 0; } }
 function newRound(S, C) {
-  C.round++; C.order = C.units.filter(up).map(u => [u.id, u.st.agility + die(S, 6) + (u.fx.init || 0) - (has(u, 'Chilled') ? 5 : 0) + (C.first === u.side ? 20 : 0)]).sort((a, b) => b[1] - a[1]).map(x => x[0]); C.oi = -1; C.focus = {}; if (C.round > 1) C.first = null;
+  C.round++; C.order = C.units.filter(up).map(u => [u.id, u.st.agility + die(S, 6) + (u.fx.init || 0) + (C.first === u.side ? 20 : 0)]).sort((a, b) => b[1] - a[1]).map(x => x[0]); C.oi = -1; C.focus = {}; if (C.round > 1) C.first = null;
   objRound(S, C);
 }
 // advance to the next unit that actually gets to act
@@ -619,9 +624,9 @@ function nextUp(S, C) {
     const u = unit(C, C.order[C.oi]); if (!u || !up(u)) continue; C.cur = u.id;
     for (const s of DOT) if (has(u, s)) { const d = Math.max(1, Math.round(u.states[s].pow * (s === 'Burning' && u.aff && u.aff.fire ? u.aff.fire : 1))); say(C, `${u.name} ${s === 'Burning' ? 'burns' : 'suffers poison'} for ${d}.`); C.fx.push({ id: u.id, d }); hurt(S, C, u, d); }
     checkOver(S, C); if (!up(u)) continue;
-    if (u.bu) for (const k of Object.keys(u.bu)) u.bu[k] = Math.max(0, u.bu[k] - 12);
+    if (u.bu) for (const k of Object.keys(u.bu)) u.bu[k] = Math.max(0, u.bu[k] - 8);
     if (u.fx.regen) heal(C, u, u.fx.regen);
-    if (has(u, 'Stunned')) { say(C, `${u.name} is stunned and loses the turn.`); delete u.states.Stunned; u.states.Steady = { t: u.boss ? 3 : u.elite ? 2 : 1, fresh: true }; tick(u); continue; }
+    if (helpless(u)) { say(C, `${u.name} is ${has(u, 'Frozen') ? 'frozen solid' : 'stunned'} and loses the turn.`); delete u.states.Stunned; delete u.states.Frozen; u.states.Steady = { t: u.boss ? 3 : u.elite ? 2 : 1, fresh: true }; tick(u); continue; }
     return;
   }
 }
@@ -640,18 +645,19 @@ function act(S, C, a) {
 }
 function threat(u) { return (u.w.die + 1) / 2 + u.st.might; }
 // does anyone else in the party have an element that reacts with this aura?
-const reactsWith = { Burning: ['frost', 'lightning', 'holy'], Chilled: ['fire', 'lightning', 'holy'], Charged: ['fire', 'frost', 'holy'] };
+const reactsWith = { Burning: ['frost', 'lightning'], Numbed: ['fire', 'lightning'] };
 function scoreSkill(C, u, sk, tspec, mates) {
   const ts = resolveTargets(C, u, sk, tspec); let s = 0;
   if (sk.m || sk.flat !== undefined) for (const t of ts) {
     const p = (21 - hitNeed(u, sk, t)) / 20, { d, rx } = damage(u, sk, t, (dieOf(u, sk) + 1) / 2, has(u, 'Hidden'));
     s += p * (Math.min(d, t.hp) + (d >= t.hp ? 5 + threat(t) : 0) + (t.boss ? 1 : 0) + (rx === 'Overload' ? d * 0.6 * (living(C, t.side).filter(o => o !== t && o.row === t.row).length) : 0) + (t.obj ? 18 : 0));
     if (d >= t.hp) continue;
+    if (t.side === 'E' && !rx && sk.el === 'frost' && !has(t, 'Frozen')) s += p * threat(t) * (has(t, 'Numbed') || sk.freeze ? 1 : 0.5);
     if (t.side === 'E' && !rx && AURA[sk.el] && !has(t, AURA[sk.el]) && mates.some(m => m !== u && m.skills.some(id => reactsWith[AURA[sk.el]].includes(SK[id].el) && !m.cds[id]))) s += p * (4 + u.lvl);
     if (t.bu) for (const [k, v] of Object.entries(buildOf(u, sk))) { const r = t.bres[k] || 0; if (!r) continue; const fill = (t.bu[k] || 0) + v * r, worth = k === 'stagger' ? (has(t, 'Steady') ? 0 : threat(t) * 1.6) : k === 'bleed' ? Math.max(4 + 2 * t.lvl, t.max * (t.boss ? 0.08 : t.elite ? 0.1 : 0.15)) : t.max * 0.12;
       s += p * worth * Math.min(1, v * r / t.cap) * 0.8 + (fill >= t.cap ? p * worth * 0.6 : 0); }
     for (const [st, turns, ch] of sk.ap || []) { if (has(t, st) || (st === 'Stunned' && has(t, 'Steady'))) continue;
-      let v = st === 'Stunned' ? threat(t) : st === 'Exposed' ? Math.max(t.arm, t.ward) * 2 + 3 : st === 'Marked' ? 3 : st === 'Burning' ? (2 + u.lvl) * turns * 0.7 : 2;
+      let v = st === 'Stunned' || st === 'Numbed' ? threat(t) * (st === 'Numbed' ? 0.5 : 1) : st === 'Exposed' ? Math.max(t.arm, t.ward) * 2 + 3 : st === 'Marked' ? 3 : st === 'Burning' ? (2 + u.lvl) * turns * 0.7 : 2;
       if (mates.some(m => m !== u && m.skills.some(id => SK[id].pay && SK[id].pay.s.includes(st) && !m.cds[id]))) v += 4 + u.lvl;
       s += p * ch * v; }
   }
@@ -1132,7 +1138,7 @@ const FIGHTS = {
     lt: ['Brother Cinder', 'The Ashen Champion'],
     1: [{ n: 'The street preacher', x: 'A wild-eyed preacher is whipping a crowd into a mob. When steel comes out, he runs.', r: ['zealot', 'acolyte', 'runner'], obj: { k: 'runner', rounds: 4, ok: 'lead', okx: 'The preacher talks: Brother Cinder gives the orders, from a chapel outside town.', fail: 'The preacher is gone, and the crowd hates you for it.' } },
       { n: 'The burned chapel', x: 'Zealots are burning the old chapel with its priest still inside.', r: ['zealot', 'zealot', 'imp'], obj: { k: 'protect', npc: 'Brother Aldo', ok: 'lead', okx: 'Brother Aldo has been watching the cult for months, and tells you everything.', fail: 'Brother Aldo dies in the smoke.' } }],
-    2: [{ n: 'The pilgrim column', x: 'New converts marching to {L}, with an escort of fanatics.', r: ['zealot', 'acolyte', 'hexer', 'flamecaller'], obj: { k: 'timed', rounds: 7, ok: 'weaken', okx: 'The converts scatter home. Fewer voices for {V}\'s choir.', fail: 'The column reaches {L}.' } },
+    2: [{ n: 'The pilgrim column', x: 'New converts marching to {L}, with an escort of fanatics.', r: ['zealot', 'acolyte', 'flamecaller'], obj: { k: 'timed', rounds: 7, ok: 'weaken', okx: 'The converts scatter home. Fewer voices for {V}\'s choir.', fail: 'The column reaches {L}.' } },
       { n: 'The pyre at Wickham', x: 'They have built a pyre in the square, and someone is tied to it.', r: ['zealot', 'flamecaller', 'imp'], obj: { k: 'protect', npc: 'The condemned', ok: 'weaken', okx: 'Wickham turns on the cult that night.', fail: 'The pyre is lit.' } }],
     3: [{ n: 'The ember stair', x: 'A long stair of hot stone, and the faithful defending every step.', r: ['zealot', 'imp', 'flamecaller'], obj: { k: 'hold', rounds: 4, ok: 'breach', okx: 'The stair is yours.' } },
       { n: 'The inner sanctum', x: 'The choir that feeds {V}\'s fire. Silence it.', r: ['hexer', 'flamecaller', 'zealot'], obj: { k: 'timed', rounds: 7, ok: 'breach', okx: 'The singing stops, and {V}\'s fire gutters.', fail: 'The hymn reaches its end.' } }]
@@ -1141,7 +1147,7 @@ const FIGHTS = {
     lt: ['The Scale-Priest', 'Ashwing\'s Champion'],
     1: [{ n: 'Wyrm-sworn raiders', x: 'Raiders in scale-painted masks, collecting tribute for the dragon. One rides for the mountain.', r: ['zealot', 'imp', 'archer'], obj: { k: 'runner', rounds: 4, ok: 'lead', okx: 'The rider\'s pouch holds a map of the tribute roads.', fail: 'The rider vanishes toward the smoking peak.' } },
       { n: 'The scorched hamlet', x: 'Imps are picking through the ashes of a hamlet that did not pay.', r: ['imp', 'imp', 'zealot'], obj: { k: 'protect', npc: 'The survivors', ok: 'lead', okx: 'The survivors saw the Scale-Priest who leads the raids.', fail: 'There are no survivors.' } }],
-    2: [{ n: 'The tribute caravan', x: 'Gold, cattle and captives on the road to the mountain.', r: ['zealot', 'hexer', 'xbow', 'imp'], obj: { k: 'timed', rounds: 7, ok: 'weaken', okx: 'Ashwing will go hungry, and a hungry dragon is a careless one.', fail: 'The caravan climbs out of reach.' } },
+    2: [{ n: 'The tribute caravan', x: 'Gold, cattle and captives on the road to the mountain.', r: ['zealot', 'hexer', 'imp'], obj: { k: 'timed', rounds: 7, ok: 'weaken', okx: 'Ashwing will go hungry, and a hungry dragon is a careless one.', fail: 'The caravan climbs out of reach.' } },
       { n: 'The egg shrine', x: 'Cultists tending a clutch of eggs in a cave of embers.', r: ['flamecaller', 'acolyte', 'zealot'], obj: { k: 'hold', rounds: 4, ok: 'weaken', okx: 'The eggs are broken. Somewhere, a dragon screams.' } }],
     3: [{ n: 'The cinder bridge', x: 'A bridge of black rock over a river of fire.', r: ['zealot', 'imp', 'flamecaller'], obj: { k: 'hold', rounds: 4, ok: 'breach', okx: 'The bridge is held.' } },
       { n: 'The hoard tunnels', x: 'The tunnels to the hoard, and the cult\'s last defenders.', r: ['imp', 'flamecaller', 'zealot', 'hexer'], obj: { k: 'timed', rounds: 7, ok: 'breach', okx: 'You reach the hoard before the alarm.', fail: 'Horns sound in the deep.' } }]
@@ -1308,11 +1314,11 @@ function pickSub(S, hi, sub, take) { const h = S.party[hi]; if (!S.lvl || !S.lvl
   return true; }
 // each path's signature weapon: on choosing a path the hero may have their weapon remade as it, keeping its quality and properties;
 // the old weapon goes to the pack. Rangers need their bow to fight from the back row.
-const SUBWP = { guardian: 'sword', berserker: 'axe', assassin: 'dagger', ranger: 'bow', pyromancer: 'staff', stormcaller: 'staff', lightbringer: 'mace', warpriest: 'warhammer' };
+const SUBWP = { guardian: 'sword', berserker: 'axe', assassin: 'dagger', ranger: 'bow', cryomancer: 'staff', stormcaller: 'staff', lightbringer: 'mace', flamekeeper: 'mace' };
 const pathWeapon = (h, sub) => { const w = h.gear.w, t = SUBWP[sub]; return !w || w.type === t || w.set || w.uq || (sub === 'ranger' && w.type === 'crossbow') ? null : finish({ k: 'weapon', type: t, tier: w.tier, afx: (w.afx || []).filter(a => AFFIX[a].on !== 'a') }); };
 function subGear(h, sub, S, take) { const nw = take === false ? null : pathWeapon(h, sub);
   if (nw) { if (S) { S.stash.push(h.gear.w); note(S, nw); } h.gear.w = nw; if (WT[nw.type].two && h.gear.off) { if (S) S.stash.push(h.gear.off); h.gear.off = null; } }
-  if (sub === 'ranger') h.row = 'B'; if (sub === 'warpriest') h.row = 'F'; if (sub === 'lightbringer') h.row = 'B'; h.hp = Math.min(h.hp, maxHp(h)); }
+  if (sub === 'ranger') h.row = 'B'; if (sub === 'flamekeeper') h.row = 'F'; if (sub === 'lightbringer') h.row = 'B'; h.hp = Math.min(h.hp, maxHp(h)); }
 function pickTalent(S, hi, c) { if (!S.lvl || !S.lvl.needT[hi] || !setTalent(S, hi, S.lvl.level - 6, c)) return false; S.lvl.needT[hi] = false; return true; }
 function closeLevel(S) { if (!S.lvl || S.lvl.need.some(Boolean) || S.lvl.needT.some(Boolean)) return false; S.lvl = null; if (lvlDue(S)) levelUp(S); else afterNode(S); return true; }
 function setEq(S, hi, ids) { const h = S.party[hi], k = known(h); if (ids.length > 4 || ids.some(x => !k.includes(x)) || new Set(ids).size !== ids.length) return false; h.eq = ids.slice(); return true; }
@@ -1323,6 +1329,7 @@ const TRAIN = { talent: 15, sub: 80 };
 // older saves: rebuild every item from the current tables, so renamed or changed effects apply
 function migrate(S) { const fix = it => { if (!it || it.k === 'cons') return; if (it.k === 'trinket' && it.ti >= 0 && !it.set && !it.uq && TRINKETS[it.ti]) { it.n = TRINKETS[it.ti][0]; it.fx = JSON.parse(JSON.stringify(TRINKETS[it.ti][1])); } finish(it); };
   for (const h of S.party) { Object.values(h.gear).forEach(fix); h.eq = h.eq.filter(id => known(h).includes(id)); h.hp = Math.min(h.hp, maxHp(h)); } (S.stash || []).forEach(fix); if (S.shop) S.shop.items.forEach(fix); if (S.loot) S.loot.items.forEach(fix); if (S.ev && S.ev.result) S.ev.result.items.forEach(fix);
+  for (const h of S.party) { if (h.sub === 'pyromancer') h.sub = 'cryomancer'; if (h.sub === 'warpriest') h.sub = 'flamekeeper'; }
   S.v = 6; S.comp = S.comp || null; if (S.q) { S.q.log = S.q.log || []; S.q.leads = S.q.leads || 0; } if (S.camp && S.camp.board) for (const b of S.camp.board) { b.log = b.log || []; b.leads = b.leads || 0; }
   for (const b of S.bag || []) if (!CONS[b.id]) b.qty = 0; S.bag = (S.bag || []).filter(b => b.qty > 0); if (S.camp) refreshBonus(S); return S; }
 function newCampaign(seed, seats, diff) {
@@ -1431,8 +1438,8 @@ function ending(S) { const q = S.q, f = q.flags, p = [];
 
 // ---------- autoplay: every decision an AI seat (or a test) needs ----------
 function aiGive(S, it) { let best = -1, bs = 0; S.party.forEach((h, i) => { if (!canUse(h, it)) return; const slot = slotOf(h, it), cur = h.gear[slot]; let s = itemScore(it) - itemScore(cur) + (cur ? 0 : 1.5); if (it.set) s += setCount(h, it.set) * 1.5 - (cur && cur.set === it.set ? 9 : 0); else if (cur && cur.set && setCount(h, cur.set) > 1) s -= 2;
-    if (it.k === 'weapon') { const w = WT[it.type]; if (cur && cur.type !== it.type) s -= 0.6; if (w.two && h.gear.off) s -= 1; if (it.type === 'staff' && cur.type !== 'staff') s -= h.cls === 'mage' ? -2 : 0.5; if (it.type === 'bow' && h.sub !== 'ranger') s -= 2; if (h.sub && SUBWP[h.sub] === it.type) s += 0.8; else if (h.sub && cur && SUBWP[h.sub] === cur.type) s -= 0.8; if (it.type === 'crossbow' && h.row === 'F') s -= 1.5; if (it.type === 'wand' && cur.type === 'staff') s -= 1; if (h.cls === 'priest' && h.sub !== 'warpriest' && !WT[it.type].sp && WT[cur.type].sp) s -= 2; if (WT[it.type].sp && h.sub === 'warpriest') s -= 2; if (h.sub === 'ranger' && it.type !== 'bow') s -= 3; if (h.cls === 'mage' && !WT[it.type].sp) s -= 3; if (it.type === 'spear' && h.cls === 'priest' && h.sub !== 'warpriest') s -= 1; }
-    if (it.k === 'shield' && h.gear.w && WT[h.gear.w.type].two) s -= 3; if (it.k === 'shield' && it.type === 'tome' && h.sub === 'warpriest') s -= 1; if (it.k === 'shield' && cur && cur.type !== it.type && it.type === 'parry') s -= 1; if (it.k === 'armor' && ARMOR[it.type].slow && h.cls !== 'warrior') s -= 0.5; if (it.k === 'armor' && cur && ARMOR[it.type].rank < ARMOR[cur.type].rank && h.row === 'F') s -= 1;
+    if (it.k === 'weapon') { const w = WT[it.type]; if (cur && cur.type !== it.type) s -= 0.6; if (w.two && h.gear.off) s -= 1; if (it.type === 'staff' && cur.type !== 'staff') s -= h.cls === 'mage' ? -2 : 0.5; if (it.type === 'bow' && h.sub !== 'ranger') s -= 2; if (h.sub && SUBWP[h.sub] === it.type) s += 0.8; else if (h.sub && cur && SUBWP[h.sub] === cur.type) s -= 0.8; if (it.type === 'crossbow' && h.row === 'F') s -= 1.5; if (it.type === 'wand' && cur.type === 'staff') s -= 1; if (h.cls === 'priest' && h.sub !== 'flamekeeper' && !WT[it.type].sp && WT[cur.type].sp) s -= 2; if (WT[it.type].sp && h.sub === 'flamekeeper') s -= 2; if (h.sub === 'ranger' && it.type !== 'bow') s -= 3; if (h.cls === 'mage' && !WT[it.type].sp) s -= 3; if (it.type === 'spear' && h.cls === 'priest' && h.sub !== 'flamekeeper') s -= 1; }
+    if (it.k === 'shield' && h.gear.w && WT[h.gear.w.type].two) s -= 3; if (it.k === 'shield' && it.type === 'tome' && h.sub === 'flamekeeper') s -= 1; if (it.k === 'shield' && cur && cur.type !== it.type && it.type === 'parry') s -= 1; if (it.k === 'armor' && ARMOR[it.type].slow && h.cls !== 'warrior') s -= 0.5; if (it.k === 'armor' && cur && ARMOR[it.type].rank < ARMOR[cur.type].rank && h.row === 'F') s -= 1;
     if (it.k === 'trinket') { s = itemScore(it) + (h.gear.t1 && h.gear.t2 ? -Math.min(itemScore(h.gear.t1), itemScore(h.gear.t2)) - 0.2 : 1.5); if (h.gear.t1 && h.gear.t2 && h.gear.t1.set) s -= 2; const f = it.fx; for (const st of STATS) if (f[st]) s += CLASSES[h.cls].grow[0] === st ? 1 : -0.3; if (f.primary) s += f.primary; if (f.thorns || f.startGuard || f.arm) s += h.row === 'F' ? 0.5 : -0.5; }
     if (s > bs) { bs = s; best = i; } }); return best; }
 function autoStep(S) {
@@ -1454,7 +1461,7 @@ function aiShop(S) { for (let si = S.stash.length - 1; si >= 0; si--) if (aiGive
     for (let hi = 0; hi < S.party.length; hi++) for (const [slot, op] of [['w', 'upgrade'], ['a', 'upgrade'], ['w', 'enchant'], ['off', 'upgrade']]) { const c = smithCost(S.party[hi].gear[slot], op, S); if (c && S.gold >= c + 15 && smith(S, hi, slot, op)) return true; }
     return false; }
 function aiSub(S, i) { const h = S.party[i], subs = Object.keys(CLASSES[h.cls].subs); if (S.forceSub && S.forceSub[i]) return S.forceSub[i];
-  if (h.cls === 'priest') return S.party.some((o, j) => j !== i && o.cls === 'priest' && o.sub !== 'warpriest') || S.party.length === 1 ? 'warpriest' : 'lightbringer'; return subs[ri(S, 2)]; }
+  if (h.cls === 'priest') return S.party.some((o, j) => j !== i && o.cls === 'priest' && o.sub !== 'flamekeeper') || S.party.length === 1 ? 'flamekeeper' : 'lightbringer'; return subs[ri(S, 2)]; }
 function aiEventChoice(S) { const e = EV[S.ev.id]; let best = 0, bs = -9; const frac = S.party.reduce((a, h) => a + h.hp / maxHp(h), 0) / S.party.length;
   e.c.forEach((c, i) => { let s; const val = o => (o.gold || 0) / 12 + (o.healP || 0) * 6 * (1.2 - frac) - (o.hurtP || 0) * 12 - (o.hurtR || 0) * 5 - (o.wound || 0) * 4 + (o.xp || 0) / 4 + (o.item ? 2.5 : 0) + (o.item2 ? 1.5 : 0) - (o.boss || 0) * 30 + (o.next === 'ambush' ? 2 : o.next === 'surprised' ? -2 : o.next ? 1 : 0) + (o.fight ? (frac > 0.7 ? 0.5 : -3) : 0) + (o.flag === 'eliteWeak' || o.flag2 === 'eliteWeak' ? 2 : 0) + (o.flag === 'cruel' || o.flag === 'desecrated' ? -1.5 : 0) + (o.flag === 'helped' || o.flag === 'spared' ? 1 : 0) + (o.comp && !S.comp ? 4 : 0) + (o.lead ? 2.5 : 0);
     if (c.s) { const { need } = checkInfo(S, c), pOk = (21 - need) / 20, pMid = c.mid ? Math.min(0.2, 1 - pOk) : 0; s = pOk * val(c.ok) + pMid * val(c.mid || {}) + (1 - pOk - pMid) * val(c.bad); }
@@ -1549,7 +1556,7 @@ function renderParty() {
     h('p', { class: 'small dim' }, 'Click a hero for stats, gear and skills.')));
 }
 function statText(x, u, st) { const c = CLASSES[x.cls], w = WT[x.gear.w.type];
-  if (st === 'might') return `+${K.mightHp * u.st.might} health for everyone${c.grow[0] === 'might' || ['warrior', 'priest'].includes(x.cls) && x.sub === 'warpriest' ? '; melee attack and damage' : w.fin ? '' : '; melee attack and damage'}.`;
+  if (st === 'might') return `+${K.mightHp * u.st.might} health for everyone${c.grow[0] === 'might' || ['warrior', 'priest'].includes(x.cls) && x.sub === 'flamekeeper' ? '; melee attack and damage' : w.fin ? '' : '; melee attack and damage'}.`;
   if (st === 'agility') return `defence (enemies need 9 + this to hit you) and turn order${w.fin || w.ranged ? '; also your attack and damage with this weapon' : ''}.`;
   if (st === 'mind') return `crits on ${20 - Math.floor(u.st.mind / K.mindCrit) - (u.fx.crit || 0)}+ (one step per ${K.mindCrit} Mind)${x.cls === 'mage' ? '; spell attack and damage' : ''}.`;
   return `resists ${Math.round(u.st.spirit * K.spiritResist * 100)}% of harmful states from enemies, and healing received is +${Math.round(u.st.spirit * K.spiritHeal * 100)}%${x.cls === 'priest' ? '; holy attacks and heal strength' : ''}.`; }
@@ -1810,7 +1817,8 @@ function rules() {
     h('p', null, h('b', null, 'Stats. '), 'Every stat helps every hero. Might: +2 health per point, and melee attack and damage. Agility: defence and turn order, plus attack with bows, daggers and rapiers. Mind: one step wider critical range per 4 points, and spell attack and damage. Spirit: 3% per point to resist harmful states from enemies and +3% healing received, plus holy attacks and heal strength. Items "of Power" always raise the wearer\'s main stat. Click a hero for the exact numbers.'),
     h('p', null, h('b', null, 'Damage types. '), 'Weapons and physical skills deal Slash (swords, axes), Pierce (daggers, spears, bows) or Strike (maces, hammers, staves). Each enemy wears Cloth, Hide, Mail, Plate, Bone or Spirit, which takes more or less from each: Strike cracks bone and plate, Pierce finds the gaps in mail, Slash cuts cloth and hide. Spells are Fire, Frost, Lightning, Holy or Arcane, and each family of enemies has its own weaknesses. Click an enemy to see them.'),
     h('p', null, h('b', null, 'Meters. '), Object.values(BU_INFO).join(' '), ' Slashing weapons build Bleed, striking weapons build Stagger, and some skills and poisons build Poison. Meters drain a little each turn, and elites and bosses take longer to fill.'),
-    h('p', null, h('b', null, 'Elements and reactions. '), 'Fire leaves a target Burning, Frost leaves it Chilled, Lightning leaves it Charged. A different element on top causes a reaction: ', Object.entries(REACT_INFO).map(([k, v]) => `${k}: ${v}`).join(' ')),
+    h('p', null, h('b', null, 'Elements. '), 'Fire (Flamekeeper) sets enemies Burning: damage every turn. Frost (Cryomancer) Numbs them: their attacks are at -3 to hit and deal 25% less, and more frost freezes them solid for a turn. Lightning (Stormcaller) builds Stagger, which stuns. Holy heals your most wounded ally for part of the damage, and undead and cultists fear it. Arcane never misses and ignores half of ward.'),
+    h('p', null, h('b', null, 'Reactions. '), Object.entries(REACT_INFO).map(([k, v]) => `${k}: ${v}`).join(' ')),
     h('p', null, h('b', null, 'The road. '), 'Every fight is part of the story: each has a name, and many have an objective (stop the messenger, protect the villagers, hold the breach, win quickly). Completing objectives gives leads on the villain\'s lieutenant, or weakens the villain for the final fight. The map shows the goal of the current act and keeps a quest log. Some encounters bring a companion, a fifth fighter who stays for a while.'),
     DEBUFFS.concat(['Guard', 'Taunt', 'Blessed', 'Hidden']).map(s => h('div', { class: 'small' }, h('span', { class: 'chip ' + s + (DEBUFFS.includes(s) ? '' : ' good') }, s), ' ', STATE_INFO[s])),
     h('p', null, h('b', null, 'Going down. '), 'A hero at zero health is down and takes a wound (12% less maximum health) until healed at a camp or merchant. Allies can help them up mid-fight. If everyone is down, the adventure ends.'),
