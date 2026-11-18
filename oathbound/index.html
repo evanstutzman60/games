@@ -70,7 +70,7 @@ const ri = (S, n) => Math.floor(rnd(S) * n), pick = (S, a) => a[ri(S, a.length)]
 function shuffle(S, a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = ri(S, i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const STATS = ['might', 'agility', 'mind', 'spirit'], STAT_NAME = { might: 'Might', agility: 'Agility', mind: 'Mind', spirit: 'Spirit' };
-const K = { glance: 4, mindCrit: 4, mightHp: 2, spiritResist: 0.03, spiritHeal: 0.03, focus: 0.7, campLv: [-0.32, 1.65, 4.65, 6.7, 8.1], vetLv: [-0.1, 1.2, 2.0, 3.7, 1.7], conLv: 3.6, rankLv: 1.0, hp: 2.12, atk: 2.95, heroHeal: 0.15, vetHp: 1.15, vetAtk: 0.5, vetHeal: 0.12 };   // global difficulty knobs, set by simulation
+const K = { easeN: 7, easeVet: 3, easeAtk: 1.2, easeHp: 0.25, glance: 4, mindCrit: 4, mightHp: 2, spiritResist: 0.03, spiritHeal: 0.03, focus: 0.7, campLv: [-0.32, 1.25, 4.05, 5.9, 7.3], vetLv: [0.05, 1.6, 2.5, 4.3, 2.6], conLv: 3.6, rankLv: 1.0, hp: 2.2, atk: 3.05, heroHeal: 0.15, vetHp: 1.15, vetAtk: 0.5, vetHeal: 0.12 };   // global difficulty knobs, set by simulation
 
 // States. Tactical states come from specific skills; elemental auras come from Fire, Frost and Lightning hits;
 // Poisoned comes from the Poison meter (or enemy venom). Bleed and Stagger are meters that trigger instantly.
@@ -439,9 +439,11 @@ const EN = {
   wyrm: { n: 'Wyrm', fam: 'cult', ar: 'plate', aff: { fire: 0.25, frost: 1.5, holy: 1 }, hp: 110, atk: 6, agi: 3, arm: 3, ward: 2, die: 10, row: 'F', sk: ['e_hit', 'e_breath', 'e_tail'], boss: true }
 };
 const affOf = e => ({ ...FAM[e.fam].aff, ...(e.aff || {}) }), bresOf = e => ({ bleed: 1, poison: 1, stagger: 1, ...FAM[e.fam].bres, ...(e.bres || {}) });
+// the first few fights of a run ramp up to full strength, so a new party can find its feet
+const rampOf = S => Math.max(0, 1 - (S.stats ? S.stats.fights : 9) / (S.diff ? K.easeVet : K.easeN));
 function enemyUnit(S, key, lv, k, n) {
-  const e = EN[key], big = e.elite || e.boss, iron = hasMod(S, 'armored') ? 3 : 0, small = n === 1 ? 0.62 : n === 2 ? 0.88 : 1, size = (big ? 0.4 + 0.15 * n : 1) * small, atk = e.atk + 1.3 * (lv - 1) + K.atk - (n === 1 ? 1.5 : 0), agi = Math.round(e.agi + 0.6 * (lv - 1));
-  const vet = S.diff ? 1 : 0, hp = Math.max(1, Math.round(e.hp * (1 + 0.4 * (lv - 1)) * size * K.hp * (vet ? K.vetHp : 1))), a = Math.round(atk + vet * K.vetAtk), fx = {};
+  const e = EN[key], big = e.elite || e.boss, iron = hasMod(S, 'armored') ? 3 : 0, small = n === 1 ? 0.62 : n === 2 ? 0.88 : 1, size = (big ? 0.4 + 0.15 * n : 1) * small, ease = rampOf(S), atk = e.atk + 1.3 * (lv - 1) + K.atk - (n === 1 ? 1.5 : 0) - K.easeAtk * ease, agi = Math.round(e.agi + 0.6 * (lv - 1));
+  const vet = S.diff ? 1 : 0, hp = Math.max(1, Math.round(e.hp * (1 + 0.4 * (lv - 1)) * size * K.hp * (1 - K.easeHp * ease) * (vet ? K.vetHp : 1))), a = Math.round(atk + vet * K.vetAtk), fx = {};
   if (hasMod(S, 'regen') || e.regen) fx.regen = Math.ceil(hp * (e.regen || 0.05));
   return { id: 'e' + k, side: 'E', key, name: e.n, fam: e.fam, ar: e.ar, aff: affOf(e), bres: bresOf(e), bu: {}, cap: big ? (e.boss ? 240 : 160) : 100, row: e.row, hp, max: hp, st: { might: a, agility: agi, mind: a, spirit: a }, lvl: Math.round(lv), fx,
     arm: e.arm + Math.floor((lv - 1) / 2) + iron, ward: e.ward + Math.floor((lv - 1) / 2) + iron, defb: 0, w: { die: e.die + Math.floor(lv - 1), sp: e.die + Math.floor(lv - 1), hit: 0, bonus: 0 },
@@ -1278,13 +1280,13 @@ function encounter(S, kind) {
   const fam = kind === 'boss' || node.lt || rnd(S) < 0.7 ? S.q.fam : pick(S, ['beast', 'bandit']);
   const pool = Object.keys(EN).filter(k => EN[k].fam === fam && !EN[k].elite && !EN[k].boss && (EN[k].act || 1) <= P), list = [];
   const more = hasMod(S, 'swarm') ? 1 : 0, ft = kind === 'normal' ? fightOf(S, node) : null;
-  if (ft) { const roster = ft.r === 'fam' ? pool : ft.r, cnt = clamp(n + (rnd(S) < 0.3 + 0.1 * Math.min(3, P) ? 1 : 0) - (P === 1 && node.x <= 1 ? 1 : 0) + more, 1, 6);
+  if (ft) { const roster = ft.r === 'fam' ? pool : ft.r, cnt = clamp(n + (S.stats.fights >= 3 && rnd(S) < 0.3 + 0.1 * Math.min(3, P) ? 1 : 0) - (S.stats.fights === 0 || (P === 1 && node.x <= 1) ? 1 : 0) + more, 1, 6);
     for (let k = 0; k < cnt; k++) list.push(k < roster.length ? roster[k] : pick(S, roster.filter(r => r !== 'runner')));
     if (roster.includes('runner') && !list.includes('runner')) list[list.length - 1] = 'runner';
     const obj = ft.obj ? { ...ft.obj, pool: roster.filter(r => r !== 'runner') } : null; return { kind, lv, list, name: fill(S, ft.n), text: fill(S, ft.x), obj }; }
   if (kind === 'boss') { list.push(S.q.boss); for (let k = 0; k < Math.max(0, n - 2) + more; k++) list.push(pick(S, pool)); }
   else if (kind === 'elite') { const el = node.lt ? S.q.lt : Object.keys(EN).find(k => EN[k].fam === fam && EN[k].elite); list.push(el); for (let k = 0; k < Math.max(0, n - 1 - (P < 2 ? 1 : 0)) + more; k++) list.push(pick(S, pool)); }
-  else { const cnt = clamp(n + (rnd(S) < 0.3 + 0.1 * Math.min(3, P) ? 1 : 0) - (P === 1 && node.x <= 1 ? 1 : 0) + more, 1, 6); for (let k = 0; k < cnt; k++) list.push(pick(S, pool)); }
+  else { const cnt = clamp(n + (S.stats.fights >= 3 && rnd(S) < 0.3 + 0.1 * Math.min(3, P) ? 1 : 0) - (S.stats.fights === 0 || (P === 1 && node.x <= 1) ? 1 : 0) + more, 1, 6); for (let k = 0; k < cnt; k++) list.push(pick(S, pool)); }
   return { kind, lv, list, name: node.fname && kind !== 'normal' ? node.fname : '', ltn: kind === 'elite' && node.lt ? node.ltn : null };
 }
 function travel(S, id) {
