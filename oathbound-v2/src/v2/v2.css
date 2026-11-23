@@ -1,0 +1,8 @@
+.stk{display:inline-block;font-size:11px;padding:1px 6px;margin:2px 3px 0 0;border-radius:8px;border:1px solid}
+.stk.frost{background:rgba(120,190,255,.18);border-color:#7cbcff;color:#bfe0ff}.stk.shock{background:rgba(160,140,255,.18);border-color:#a08cff;color:#d6ccff}
+.stk.bleed{background:rgba(200,40,40,.2);border-color:#c84040;color:#ffb0b0}.stk.poison{background:rgba(90,170,60,.2);border-color:#6fb84a;color:#c8f0b0}
+.stk.burn{background:rgba(240,130,30,.2);border-color:#f0902a;color:#ffd0a0}.stk.sunder{background:rgba(170,170,170,.18);border-color:#aaa;color:#e0e0e0}
+.res{font-size:11px;color:#ffd36b;margin-top:2px}.res .dots{letter-spacing:1px}
+.wind{font-size:11px;color:#ff7a5a;font-weight:bold;margin-top:2px}
+.toghost{border-style:dashed!important;border-color:#ffd36b!important;background:transparent!important}
+.towind{color:#ff7a5a;font-weight:bold}

@@ -1,0 +1,14 @@
+const CLASSES = {
+  warrior: { n: 'Warrior', row: 'F', hp: 30, hpl: 8, st: [4, 2, 1, 2], grow: ['might', 'agility'], wp: ['sword', 'axe', 'mace', 'spear', 'flail', 'warhammer', 'crossbow'], shield: true, armor: 3, base: ['heavy', 'shove', 'taunt', 'cleave'], start: ['sword', 'shield', 'medium'],
+    blurb: 'Holds the front row with heavy weapons. Builds Rage by hitting and being hit, and Sunders enemies so the whole party hits harder.',
+    subs: { guardian: { n: 'Guardian', sk: ['shieldwall', 'intercept', 'slam'], blurb: 'Shields the party, takes hits for allies, and slams enemies down the timeline.' }, berserker: { n: 'Berserker', sk: ['reckless', 'whirl', 'execute'], blurb: 'Reckless swings that pile on Sunder, then an Execute that spends every point of Rage.' } } },
+  rogue: { n: 'Rogue', row: 'F', hp: 22, hpl: 6, st: [2, 4, 2, 1], grow: ['agility', 'might'], wp: ['dagger', 'sabre', 'rapier', 'bow', 'crossbow'], shield: false, armor: 2, base: ['slash', 'knife', 'smoke', 'evis'], start: ['dagger', null, 'light'],
+    blurb: 'Quick blades that build Combo and Bleed, then a finisher that spends it all. Agile enough to dodge some attacks.',
+    subs: { assassin: { n: 'Assassin', sk: ['backstab', 'envenom', 'garrote'], blurb: 'Strikes from Hidden, poisons, and garrotes for huge Bleed and Poison.' }, ranger: { n: 'Ranger', sk: ['venomarrow', 'pinning', 'volley'], blurb: 'Fights from the back row with a bow: venom arrows, pinning shots and volleys.' } } },
+  mage: { n: 'Mage', row: 'B', hp: 18, hpl: 5, st: [1, 2, 4, 2], grow: ['mind', 'spirit'], wp: ['staff', 'dagger', 'wand'], shield: false, armor: 1, base: ['abolt', 'frostshard', 'spark', 'missiles'], start: ['staff', null, 'light'],
+    blurb: 'Blue magic: arcane bolts, frost that piles up until enemies freeze, and lightning that charges them. Gains Focus every turn.',
+    subs: { cryomancer: { n: 'Cryomancer', sk: ['icelance', 'frostarmor', 'blizzard'], blurb: 'Piles Frost on enemies until they freeze, then cashes it in with Ice Lance.' }, stormcaller: { n: 'Stormcaller', sk: ['chain', 'thunder', 'staticfield'], blurb: 'Spreads Shock across the field and detonates it with Thunderclap.' } } },
+  priest: { n: 'Priest', row: 'B', hp: 22, hpl: 6, st: [2, 1, 2, 4], grow: ['spirit', 'might'], wp: ['mace', 'staff', 'spear', 'flail', 'warhammer', 'wand'], shield: true, armor: 3, base: ['smite', 'mend', 'bless', 'revive'], start: ['mace', 'shield', 'light'],
+    blurb: 'Heals and cleanses with every heal, and builds Faith to spend on big prayers. Holy damage heals as it strikes.',
+    subs: { lightbringer: { n: 'Lightbringer', sk: ['radiance', 'sanctuary', 'judgement'], blurb: 'Party-wide healing, warding prayers and a holy blast.' }, flamekeeper: { n: 'Flamekeeper', sk: ['searing', 'pyre', 'holyfire'], blurb: 'A holy-fire zealot in the front row: sets enemies Burning and cashes the flames in to heal the party.' } } }
+};
